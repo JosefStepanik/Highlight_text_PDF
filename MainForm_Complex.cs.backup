@@ -1,0 +1,580 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Windows.Forms;
+using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas.Parser;
+using iText.Kernel.Pdf.Canvas.Parser.Listener;
+using iText.Layout.Element;
+using iText.Kernel.Geom;
+using PdfSharp.Pdf;
+using PdfSharp.Drawing;
+
+namespace PdfHighlighter
+{
+    public partial class MainForm : Form
+    {
+        private Button btnSelectPdf;
+        private TextBox txtSearchTerms;
+        private Button btnHighlight;
+        private Panel pnlPdf;
+        private PictureBox picPdf;
+        private Label lblStatus;
+        private TrackBar trackZoom;
+        private Button btnPrevPage;
+        private Button btnNextPage;
+        private Label lblPageInfo;
+        private ScrollableControl scrollContainer;
+
+        // PDF related fields
+        private PdfSharp.Pdf.PdfDocument? pdfDocument;
+        private int currentPageIndex = 0;
+        private float zoomFactor = 1.0f;
+        private List<string> searchTerms = new List<string>();
+        private List<RectangleF> highlights = new List<RectangleF>();
+        private string? currentPdfPath;
+
+        public MainForm()
+        {
+            InitializeComponent();
+            InitializePdfEngine();
+        }
+
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+
+            // Form properties
+            this.Text = "PDF Text Highlighter";
+            this.Size = new Size(1000, 700);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.MinimumSize = new Size(800, 600);
+
+            // Main layout
+            var mainPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3
+            };
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));  // Toolbar
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // PDF viewer
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Status bar
+
+            // Toolbar
+            var toolbar = CreateToolbar();
+            mainPanel.Controls.Add(toolbar, 0, 0);
+
+            // PDF viewer area
+            var viewerPanel = CreatePdfViewer();
+            mainPanel.Controls.Add(viewerPanel, 0, 1);
+
+            // Status bar
+            var statusBar = CreateStatusBar();
+            mainPanel.Controls.Add(statusBar, 0, 2);
+
+            this.Controls.Add(mainPanel);
+            this.ResumeLayout(false);
+        }
+
+        private Panel CreateToolbar()
+        {
+            var toolbar = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = SystemColors.Control,
+                Padding = new Padding(10, 10, 10, 10)
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 6,
+                RowCount = 2,
+                AutoSize = true
+            };
+
+            // First row - File selection
+            var lblFile = new Label
+            {
+                Text = "PDF soubor:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 5, 10, 5)
+            };
+            layout.Controls.Add(lblFile, 0, 0);
+
+            btnSelectPdf = new Button
+            {
+                Text = "Vybrat PDF soubor...",
+                AutoSize = true,
+                Margin = new Padding(0, 0, 10, 5)
+            };
+            btnSelectPdf.Click += BtnSelectPdf_Click;
+            layout.Controls.Add(btnSelectPdf, 1, 0);
+
+            // Navigation controls
+            btnPrevPage = new Button
+            {
+                Text = "◀ Předchozí",
+                AutoSize = true,
+                Enabled = false,
+                Margin = new Padding(0, 0, 5, 5)
+            };
+            btnPrevPage.Click += BtnPrevPage_Click;
+            layout.Controls.Add(btnPrevPage, 2, 0);
+
+            btnNextPage = new Button
+            {
+                Text = "Následující ▶",
+                AutoSize = true,
+                Enabled = false,
+                Margin = new Padding(0, 0, 10, 5)
+            };
+            btnNextPage.Click += BtnNextPage_Click;
+            layout.Controls.Add(btnNextPage, 3, 0);
+
+            lblPageInfo = new Label
+            {
+                Text = "Žádný PDF",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 5, 10, 5)
+            };
+            layout.Controls.Add(lblPageInfo, 4, 0);
+
+            // Zoom control
+            var lblZoom = new Label
+            {
+                Text = "Zoom:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 5, 5, 5)
+            };
+            layout.Controls.Add(lblZoom, 5, 0);
+
+            // Second row - Search
+            var lblSearch = new Label
+            {
+                Text = "Hledané výrazy (oddělené čárkou):",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                Margin = new Padding(0, 5, 10, 0)
+            };
+            layout.Controls.Add(lblSearch, 0, 1);
+
+            txtSearchTerms = new TextBox
+            {
+                PlaceholderText = "například: slovo1, dlouhá fráze, jiný text",
+                Width = 300,
+                Margin = new Padding(0, 0, 10, 0)
+            };
+            txtSearchTerms.KeyDown += TxtSearchTerms_KeyDown;
+            layout.Controls.Add(txtSearchTerms, 1, 1);
+            layout.SetColumnSpan(txtSearchTerms, 2);
+
+            btnHighlight = new Button
+            {
+                Text = "🔍 Zvýraznit text",
+                AutoSize = true,
+                Enabled = false,
+                Margin = new Padding(0, 0, 10, 0)
+            };
+            btnHighlight.Click += BtnHighlight_Click;
+            layout.Controls.Add(btnHighlight, 3, 1);
+
+            // Zoom trackbar
+            trackZoom = new TrackBar
+            {
+                Minimum = 25,
+                Maximum = 300,
+                Value = 100,
+                TickFrequency = 25,
+                Width = 150,
+                Enabled = false
+            };
+            trackZoom.ValueChanged += TrackZoom_ValueChanged;
+            layout.Controls.Add(trackZoom, 4, 1);
+            layout.SetColumnSpan(trackZoom, 2);
+
+            toolbar.Controls.Add(layout);
+            return toolbar;
+        }
+
+        private Panel CreatePdfViewer()
+        {
+            var viewerContainer = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Gray,
+                AutoScroll = true
+            };
+
+            scrollContainer = new ScrollableControl
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = Color.Gray
+            };
+
+            picPdf = new PictureBox
+            {
+                SizeMode = PictureBoxSizeMode.AutoSize,
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            picPdf.Paint += PicPdf_Paint;
+
+            scrollContainer.Controls.Add(picPdf);
+            viewerContainer.Controls.Add(scrollContainer);
+
+            return viewerContainer;
+        }
+
+        private Panel CreateStatusBar()
+        {
+            var statusPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = SystemColors.Control
+            };
+
+            lblStatus = new Label
+            {
+                Text = "Připraven. Vyberte PDF soubor pro začátek.",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(10, 0, 0, 0)
+            };
+
+            statusPanel.Controls.Add(lblStatus);
+            return statusPanel;
+        }
+
+        private void InitializePdfEngine()
+        {
+            // PdfSharp doesn't require explicit initialization
+        }
+
+        private void BtnSelectPdf_Click(object sender, EventArgs e)
+        {
+            using var openFileDialog = new OpenFileDialog
+            {
+                Filter = "PDF soubory (*.pdf)|*.pdf|Všechny soubory (*.*)|*.*",
+                FilterIndex = 1,
+                RestoreDirectory = true,
+                Title = "Vyberte PDF soubor"
+            };
+
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                LoadPdfFile(openFileDialog.FileName);
+            }
+        }
+
+        private void LoadPdfFile(string filePath)
+        {
+            try
+            {
+                // Dispose previous document
+                pdfDocument?.Close();
+
+                // Load new document
+                pdfDocument = PdfSharp.Pdf.IO.PdfReader.Open(filePath, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+                currentPdfPath = filePath;
+                currentPageIndex = 0;
+
+                if (pdfDocument.PageCount > 0)
+                {
+                    btnHighlight.Enabled = true;
+                    btnPrevPage.Enabled = false;
+                    btnNextPage.Enabled = pdfDocument.PageCount > 1;
+                    trackZoom.Enabled = true;
+
+                    UpdatePageInfo();
+                    RenderCurrentPage();
+
+                    lblStatus.Text = $"Načten PDF: {Path.GetFileName(filePath)} ({pdfDocument.PageCount} stránek)";
+                }
+                else
+                {
+                    MessageBox.Show("PDF soubor neobsahuje žádné stránky.", "Chyba", 
+                                  MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Chyba při načítání PDF souboru:\n{ex.Message}", 
+                              "Chyba", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Chyba při načítání PDF souboru.";
+            }
+        }
+
+        private void RenderCurrentPage()
+        {
+            if (pdfDocument == null || currentPageIndex >= pdfDocument.PageCount)
+                return;
+
+            try
+            {
+                using var page = pdfDocument.Pages[currentPageIndex];
+                
+                // Calculate render size based on zoom
+                var pageSize = page.Size;
+                int renderWidth = (int)(pageSize.Width * zoomFactor);
+                int renderHeight = (int)(pageSize.Height * zoomFactor);
+
+                // Render page to bitmap
+                using var bitmap = new Bitmap(renderWidth, renderHeight);
+                using var graphics = Graphics.FromImage(bitmap);
+                
+                graphics.Clear(Color.White);
+                page.Render(graphics, 0, 0, renderWidth, renderHeight);
+
+                // Set the rendered bitmap to PictureBox
+                picPdf.Image?.Dispose();
+                picPdf.Image = new Bitmap(bitmap);
+
+                // Update highlights for current page
+                UpdateHighlights();
+
+                // Center the image in the container
+                CenterImage();
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text = $"Chyba při renderování stránky: {ex.Message}";
+            }
+        }
+
+        private void UpdateHighlights()
+        {
+            highlights.Clear();
+
+            if (pdfDocument == null || searchTerms.Count == 0 || currentPageIndex >= pdfDocument.PageCount)
+                return;
+
+            try
+            {
+                using var page = pdfDocument.Pages[currentPageIndex];
+                
+                foreach (var term in searchTerms)
+                {
+                    if (string.IsNullOrWhiteSpace(term))
+                        continue;
+
+                    var matches = page.Search(term.Trim(), SearchFlags.MatchCase);
+                    foreach (var match in matches)
+                    {
+                        // Convert page coordinates to screen coordinates
+                        var rect = match.Bounds;
+                        var screenRect = new RectangleF(
+                            rect.X * zoomFactor,
+                            rect.Y * zoomFactor,
+                            rect.Width * zoomFactor,
+                            rect.Height * zoomFactor
+                        );
+                        highlights.Add(screenRect);
+                    }
+                }
+
+                picPdf.Invalidate(); // Trigger repaint
+            }
+            catch (Exception ex)
+            {
+                lblStatus.Text = $"Chyba při hledání textu: {ex.Message}";
+            }
+        }
+
+        private void PicPdf_Paint(object sender, PaintEventArgs e)
+        {
+            if (highlights.Count == 0)
+                return;
+
+            // Draw highlight rectangles
+            using var highlightBrush = new SolidBrush(Color.FromArgb(100, Color.Red));
+            using var highlightPen = new Pen(Color.Red, 2);
+
+            foreach (var highlight in highlights)
+            {
+                e.Graphics.FillRectangle(highlightBrush, highlight);
+                e.Graphics.DrawRectangle(highlightPen, Rectangle.Round(highlight));
+            }
+        }
+
+        private void BtnHighlight_Click(object sender, EventArgs e)
+        {
+            ParseSearchTerms();
+            UpdateHighlights();
+            
+            if (highlights.Count > 0)
+            {
+                lblStatus.Text = $"Nalezeno {highlights.Count} výskytů hledaných výrazů.";
+            }
+            else
+            {
+                lblStatus.Text = "Žádné výskyty hledaných výrazů nebyly nalezeny.";
+            }
+        }
+
+        private void ParseSearchTerms()
+        {
+            searchTerms.Clear();
+            
+            if (string.IsNullOrWhiteSpace(txtSearchTerms.Text))
+                return;
+
+            var terms = txtSearchTerms.Text.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var term in terms)
+            {
+                var trimmed = term.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    searchTerms.Add(trimmed);
+                }
+            }
+        }
+
+        private void BtnPrevPage_Click(object sender, EventArgs e)
+        {
+            if (currentPageIndex > 0)
+            {
+                currentPageIndex--;
+                UpdatePageInfo();
+                RenderCurrentPage();
+                UpdateNavigationButtons();
+            }
+        }
+
+        private void BtnNextPage_Click(object sender, EventArgs e)
+        {
+            if (pdfDocument != null && currentPageIndex < pdfDocument.PageCount - 1)
+            {
+                currentPageIndex++;
+                UpdatePageInfo();
+                RenderCurrentPage();
+                UpdateNavigationButtons();
+            }
+        }
+
+        private void UpdateNavigationButtons()
+        {
+            if (pdfDocument == null)
+            {
+                btnPrevPage.Enabled = false;
+                btnNextPage.Enabled = false;
+                return;
+            }
+
+            btnPrevPage.Enabled = currentPageIndex > 0;
+            btnNextPage.Enabled = currentPageIndex < pdfDocument.PageCount - 1;
+        }
+
+        private void UpdatePageInfo()
+        {
+            if (pdfDocument == null)
+            {
+                lblPageInfo.Text = "Žádný PDF";
+            }
+            else
+            {
+                lblPageInfo.Text = $"Stránka {currentPageIndex + 1} z {pdfDocument.PageCount}";
+            }
+        }
+
+        private void TrackZoom_ValueChanged(object sender, EventArgs e)
+        {
+            zoomFactor = trackZoom.Value / 100.0f;
+            RenderCurrentPage();
+            lblStatus.Text = $"Zoom: {trackZoom.Value}%";
+        }
+
+        private void TxtSearchTerms_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter && btnHighlight.Enabled)
+            {
+                BtnHighlight_Click(sender, e);
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private void CenterImage()
+        {
+            if (picPdf.Image == null || scrollContainer == null)
+                return;
+
+            // Center the image in the scroll container
+            int x = Math.Max(0, (scrollContainer.ClientSize.Width - picPdf.Width) / 2);
+            int y = Math.Max(0, (scrollContainer.ClientSize.Height - picPdf.Height) / 2);
+            
+            picPdf.Location = new Point(x, y);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // Clean up resources
+            pdfDocument?.Dispose();
+            picPdf.Image?.Dispose();
+            
+            try
+            {
+                PDFium.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't prevent closing
+                System.Diagnostics.Debug.WriteLine($"Error during PDFium shutdown: {ex.Message}");
+            }
+            
+            base.OnFormClosing(e);
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            // Handle keyboard shortcuts
+            switch (keyData)
+            {
+                case Keys.Left:
+                case Keys.PageUp:
+                    if (btnPrevPage.Enabled)
+                    {
+                        BtnPrevPage_Click(this, EventArgs.Empty);
+                        return true;
+                    }
+                    break;
+
+                case Keys.Right:
+                case Keys.PageDown:
+                    if (btnNextPage.Enabled)
+                    {
+                        BtnNextPage_Click(this, EventArgs.Empty);
+                        return true;
+                    }
+                    break;
+
+                case Keys.Add:
+                case Keys.Oemplus:
+                    if (trackZoom.Enabled && trackZoom.Value < trackZoom.Maximum)
+                    {
+                        trackZoom.Value = Math.Min(trackZoom.Maximum, trackZoom.Value + 25);
+                        return true;
+                    }
+                    break;
+
+                case Keys.Subtract:
+                case Keys.OemMinus:
+                    if (trackZoom.Enabled && trackZoom.Value > trackZoom.Minimum)
+                    {
+                        trackZoom.Value = Math.Max(trackZoom.Minimum, trackZoom.Value - 25);
+                        return true;
+                    }
+                    break;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+    }
+}
