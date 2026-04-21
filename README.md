@@ -1,6 +1,6 @@
 # PDF Text Highlighter pro Windows
 
-Moderní aplikace v jazyce C# s Windows Forms pro zvýrazňování textu v PDF souborech. Nativní Windows aplikace s .NET 6.0.
+Moderní aplikace v jazyce C# s Windows Forms pro zvýrazňování textu v PDF souborech. Nativní Windows aplikace s .NET 8.0.
 
 ## Funkce
 
@@ -12,9 +12,9 @@ Moderní aplikace v jazyce C# s Windows Forms pro zvýrazňování textu v PDF s
 
 ## Systémové požadavky
 
-### .NET 6.0 Runtime (Doporučeno)
-- **Stáhněte z**: https://dotnet.microsoft.com/download/dotnet/6.0
-- **Typ**: .NET Desktop Runtime 6.0 nebo novější
+### .NET 8.0 Runtime (Doporučeno)
+- **Stáhněte z**: https://dotnet.microsoft.com/download/dotnet/8.0
+- **Typ**: .NET Desktop Runtime 8.0 nebo novější
 - **Platforma**: Windows x64
 
 ### Alternativně: Standalone verze
@@ -31,8 +31,8 @@ build_csharp.bat
 
 ### 2. Manuální sestavení
 ```cmd
-dotnet restore
-dotnet build --configuration Release
+dotnet restore Highlight_text.sln
+dotnet build Highlight_text.sln --configuration Release
 ```
 
 ### 3. Vytvoření standalone verze
@@ -43,7 +43,12 @@ Vytvoří samostatný EXE soubor, který nepotřebuje .NET Runtime.
 
 ### 4. Vývojářská verze
 ```cmd
-dotnet build --configuration Debug
+dotnet build Highlight_text.sln --configuration Debug
+```
+
+### 5. Spuštění v Debug režimu
+```cmd
+debug_run.bat
 ```
 
 ## Spuštění aplikace
@@ -55,7 +60,7 @@ run_csharp.bat
 
 ### 2. Přímé spuštění
 ```cmd
-bin\Release\net6.0-windows\PdfHighlighter.exe
+dotnet run --project PdfHighlighter.csproj --configuration Release
 ```
 
 ### 3. Standalone verze
@@ -89,9 +94,17 @@ publish\PdfHighlighter.exe
 ```
 ├── PdfHighlighter.csproj   # .NET projekt soubor
 ├── Program.cs              # Vstupní bod aplikace
-├── MainForm.cs             # Hlavní formulář s GUI
+├── MainForm.cs             # Sdílené proměnné a konstanty formuláře
+├── MainForm.UI.cs          # Sestavení toolbaru, vieweru a status baru
+├── MainForm.Events.cs      # Obsluha tlačítek a klávesových zkratek
+├── MainForm.PdfHandling.cs # Načítání a vykreslování PDF
+├── MainForm.Search.cs      # Hledání textu a výpočet highlightů
+├── MainForm.Geometry.cs    # Převody souřadnic PDF -> obrazovka
+├── favicon.ico             # Ikona aplikace
+├── LOGO_1COLOR_SVG.svg     # Logo pro pravou část toolbaru
 ├── build_csharp.bat        # Build skript
 ├── run_csharp.bat          # Spouštěcí skript
+├── debug_run.bat           # Spuštění v Debug režimu
 ├── publish.bat             # Vytvoření standalone verze
 ├── bin/                    # Sestavené soubory
 ├── obj/                    # Dočasné build soubory
@@ -106,15 +119,15 @@ publish\PdfHighlighter.exe
    ```cmd
    dotnet --list-runtimes
    ```
-   Měli byste vidět "Microsoft.WindowsDesktop.App 6.0.x"
+   Měli byste vidět "Microsoft.WindowsDesktop.App 8.0.x"
 
 2. **Reinstalujte .NET Desktop Runtime**:
-   - Stáhněte z https://dotnet.microsoft.com/download/dotnet/6.0
+   - Stáhněte z https://dotnet.microsoft.com/download/dotnet/8.0
    - Zvolte "Desktop Runtime"
 
-### Chyba: "The framework 'Microsoft.WindowsDesktop.App' version '6.0.0' was not found"
+### Chyba: "The framework 'Microsoft.WindowsDesktop.App' version '8.0.0' was not found"
 ```cmd
-# Stáhněte a nainstalujte .NET 6.0 Desktop Runtime
+# Stáhněte a nainstalujte .NET 8.0 Desktop Runtime
 # Nebo použijte standalone verzi:
 publish.bat
 ```
@@ -133,22 +146,27 @@ publish.bat
 ```cmd
 # Vyčistěte projekt a zkuste znovu
 dotnet clean
-dotnet restore
-dotnet build
+dotnet restore Highlight_text.sln
+dotnet build Highlight_text.sln --configuration Release
 ```
+
+Pokud build selže chybou o zamčeném souboru PdfHighlighter.exe, zavřete běžící aplikaci a spusťte build znovu.
 
 ## Technické detaily
 
-- **Jazyk**: C# (.NET 6.0)
+- **Jazyk**: C# (.NET 8.0)
 - **GUI Framework**: Windows Forms
-- **PDF knihovna**: PDFium.NET SDK
-- **Kompatibilita**: Windows 10/11 (.NET 6.0+)
+- **PDF knihovny**: iText7 + PdfiumViewer
+- **Kompatibilita**: Windows 10/11 (.NET 8.0+)
 - **Build systém**: MSBuild / dotnet CLI
 - **Závislosti**: Automaticky spravované přes NuGet
 
 ### Použité NuGet balíčky:
-- `PDFium.NET.SDK` - PDF rendering a vyhledávání
+- `itext7` - extrakce textu a pozic v PDF
+- `PdfiumViewer` - renderování PDF stránek
+- `PdfiumViewer.Native.x86_64.v8-xfa` - nativní PDFium knihovny
 - `System.Drawing.Common` - Grafické operace
+- `Svg` - vykreslení SVG loga do toolbaru
 
 ## Licence
 

@@ -28,7 +28,7 @@ echo.
 
 REM Restore NuGet packages
 echo Restoring NuGet packages...
-dotnet restore
+dotnet restore Highlight_text.sln
 if %errorlevel% neq 0 (
     echo ERROR: Failed to restore NuGet packages!
     pause
@@ -38,7 +38,7 @@ echo.
 
 REM Build the application
 echo Building PDF Text Highlighter...
-dotnet build --configuration Release --no-restore
+dotnet build Highlight_text.sln --configuration Release --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: Build failed!
     pause

@@ -8,7 +8,7 @@ REM Check if .NET SDK is installed
 dotnet --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: .NET SDK not found!
-    echo Please install .NET 6.0 SDK from https://dotnet.microsoft.com/download
+    echo Please install .NET 8.0 SDK from https://dotnet.microsoft.com/download/dotnet/8.0
     pause
     exit /b 1
 )
@@ -22,7 +22,7 @@ if exist "publish" rmdir /s /q publish
 
 REM Publish self-contained
 echo Publishing standalone application...
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishReadyToRun=true -o publish
+dotnet publish Highlight_text.sln -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o publish
 
 if %errorlevel% neq 0 (
     echo ERROR: Publish failed!
@@ -35,12 +35,12 @@ echo =====================================================
 echo   STANDALONE VERSION CREATED!
 echo =====================================================
 echo.
-echo Standalone executable created in: publish\
-echo File: PdfHighlighter.exe (approximately 60-80 MB)
+echo Standalone application created in: publish\
+echo File: publish\PdfHighlighter.exe
 echo.
 echo This version includes all dependencies and doesn't require
 echo .NET Runtime to be installed on the target computer.
 echo.
-echo You can distribute just the PdfHighlighter.exe file!
+echo Distribute the whole publish\ folder.
 echo.
 pause
