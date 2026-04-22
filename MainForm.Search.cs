@@ -1,9 +1,16 @@
+// =============================================================
+// File: MainForm.Search.cs
+// Purpose: Find search terms in PDF text and compute highlight rectangles.
+// Contains: Text extraction flow, token matching logic, chunk/character heuristics, and fallback strategies.
+// Author: Josef Stepanik
+// Created: 2026-04
+// =============================================================
+
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Data;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
@@ -284,14 +291,6 @@ namespace PdfHighlighter
             }
 
             return matches;
-        }
-
-        private static bool IsBoundaryChar(string text, int index)
-        {
-            if (index < 0 || index >= text.Length)
-                return true;
-
-            return !char.IsLetterOrDigit(text[index]);
         }
 
         private static bool IsBoundaryChar(char? c)
@@ -979,7 +978,7 @@ namespace PdfHighlighter
             return new string(chars.ToArray());
         }
 
-        private static List<CharacterLine> BuildVerticalCharacterLines(List<PageCharacter> characters, Action<string>? debugLog = null)
+        private static List<CharacterLine> BuildVerticalCharacterLines(List<PageCharacter> characters)
         {
             var orderedChars = characters
                 .OrderBy(c => c.NormalProjection)
@@ -1013,13 +1012,6 @@ namespace PdfHighlighter
                 {
                     bestLine = new CharacterLine();
                     lines.Add(bestLine);
-                    if (character.Value == 'C' || character.Value == '4')
-                        debugLog?.Invoke($"NEW LINE for '{character.Value}' (angle={character.AngleDeg:F1}°, normalProj={character.NormalProjection:F1})");
-                }
-                else
-                {
-                    if (character.Value == 'C' || character.Value == '4')
-                        debugLog?.Invoke($"ADD '{character.Value}' to existing line (distance={bestDistance:F1}, tolerance={Math.Max(4f, Math.Max(bestLine.AverageWidth, character.Width) * 1.5f):F1})");
                 }
 
                 bestLine.Characters.Add(character);
@@ -1482,7 +1474,6 @@ namespace PdfHighlighter
         private class CharacterLine
         {
             public List<PageCharacter> Characters { get; } = new List<PageCharacter>();
-            public float AverageCenterX => Characters.Count == 0 ? 0f : Characters.Average(c => c.CenterX);
             public float AverageCenterY => Characters.Count == 0 ? 0f : Characters.Average(c => c.CenterY);
             public float AverageAngleDeg => Characters.Count == 0 ? 0f : Characters.Average(c => c.AngleDeg);
             public float AverageNormalProjection => Characters.Count == 0 ? 0f : Characters.Average(c => c.NormalProjection);

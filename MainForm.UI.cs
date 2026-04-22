@@ -466,7 +466,7 @@ namespace PdfHighlighter
             statusPanel.Controls.Add(statusLayout);
 
             // Přizpůsobení výšky status baru obsahu
-            statusLayout.Layout += (s, e) =>
+            statusLayout.Layout += (_, _) =>
             {
                 // Zvětší řádek na výšku nejvyššího labelu
                 int maxHeight = Math.Max(

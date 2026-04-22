@@ -1,3 +1,11 @@
+// =============================================================
+// File: AppLogger.cs
+// Purpose: Provide simple file-based application logging.
+// Contains: Logger initialization, synchronized append writes, and shutdown/disposal of log resources.
+// Author: Josef Stepanik
+// Created: 2026-04
+// =============================================================
+
 using System;
 using System.IO;
 

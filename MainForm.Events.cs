@@ -1,3 +1,11 @@
+// =============================================================
+// File: MainForm.Events.cs
+// Purpose: Handle UI events, keyboard shortcuts, and runtime user actions.
+// Contains: Button handlers, paint/mouse interactions, status updates, and debug action wiring.
+// Author: Josef Stepanik
+// Created: 2026-04
+// =============================================================
+
 using System;
 using System.Collections.Generic;
 using System.Drawing;

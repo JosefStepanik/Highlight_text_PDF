@@ -1,3 +1,11 @@
+// =============================================================
+// File: Program.cs
+// Purpose: Bootstrap the WinForms application lifecycle.
+// Contains: Application startup configuration, MainForm launch, and logger init/shutdown orchestration.
+// Author: Josef Stepanik
+// Created: 2026-04
+// =============================================================
+
 using System;
 using System.Windows.Forms;
 

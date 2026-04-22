@@ -1,3 +1,11 @@
+// =============================================================
+// File: MainForm.Geometry.cs
+// Purpose: Convert PDF coordinates to screen coordinates and normalize drawn rectangles.
+// Contains: Coordinate transforms, highlight padding/clamping, and viewport-safe geometry helpers.
+// Author: Josef Stepanik
+// Created: 2026-04
+// =============================================================
+
 using System;
 using System.Drawing;
 using System.Windows.Forms;

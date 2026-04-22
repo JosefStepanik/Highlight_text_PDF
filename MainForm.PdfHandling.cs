@@ -1,3 +1,11 @@
+// =============================================================
+// File: MainForm.PdfHandling.cs
+// Purpose: Load, render, and navigate PDF documents.
+// Contains: PDF file selection/loading, page rendering, zoom/page updates, and navigation state sync.
+// Author: Josef Stepanik
+// Created: 2026-04
+// =============================================================
+
 using System;
 using System.Windows.Forms;
 using iText.Kernel.Pdf;

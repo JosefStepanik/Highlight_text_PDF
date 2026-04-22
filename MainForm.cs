@@ -1,3 +1,11 @@
+// =============================================================
+// File: MainForm.cs
+// Purpose: Declare shared MainForm state, constants, and core fields.
+// Contains: UI control fields, PDF/document state, and highlight/search data containers.
+// Author: Josef Stepanik
+// Created: 2026-04
+// =============================================================
+
 using System;
 using System.Collections.Generic;
 using System.Drawing;
