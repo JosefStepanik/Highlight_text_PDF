@@ -16,6 +16,7 @@ namespace PdfHighlighter
         private Button btnHighlight = null!;
 
         private Label lblStatus = null!;
+        private Label lblStatusErrors = null!;
         private Button btnPrevPage = null!;
         private Button btnNextPage = null!;
         private Label lblPageInfo = null!;

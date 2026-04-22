@@ -22,4 +22,11 @@
     <PackageReference Include="Svg" Version="3.4.7" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="LOGO_1COLOR_SVG.svg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

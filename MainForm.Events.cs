@@ -10,6 +10,21 @@ namespace PdfHighlighter
     // ===== Event Handlers & Keyboard Shortcuts - Obsluha UI zdarosti a klávesových zkratek =====
     public partial class MainForm : Form
     {
+        private void SetStatusMessage(string text, bool emphasizeAsWarningOrError = false)
+        {
+            lblStatus.Text = text;
+            lblStatus.ForeColor = emphasizeAsWarningOrError ? Color.IndianRed : GLEText;
+            lblStatusErrors.Text = string.Empty;
+        }
+
+        private void SetStatusWithErrors(string statusText, string errorText)
+        {
+            lblStatus.Text = statusText;
+            lblStatus.ForeColor = GLEText;
+            lblStatusErrors.Text = errorText;
+            lblStatusErrors.ForeColor = Color.Red;
+        }
+
         // Vykreslí všechny highlight obdélníky přes aktuálně zobrazenou stránku PDF.
         private void PicPdfViewer_Paint(object? sender, PaintEventArgs e)
         {
@@ -101,48 +116,45 @@ namespace PdfHighlighter
             highlights.Clear();
             selectedHighlightIndices.Clear();
             picPdfViewer.Invalidate();
-            lblStatus.Text = "Zvýraznění vymazáno.";
+            SetStatusMessage("Zvýraznění vymazáno.");
         }
 
         // Otevře diagnostické okno se základními informacemi o PDF, stránce, zoomu a výsledcích hledání.
         private void BtnDebug_Click(object? sender, EventArgs e)
         {
-            if (pdfDocument == null)
-            {
-                MessageBox.Show("Nejdříve otevřete PDF soubor!", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            
             var debugInfo = new System.Text.StringBuilder();
             debugInfo.AppendLine($"=== DEBUG INFORMACE ===");
             debugInfo.AppendLine($"PDF soubor: {currentPdfPath ?? "Žádný"}");
-            debugInfo.AppendLine($"Aktuální stránka: {currentPageIndex + 1} / {pdfDocument.GetNumberOfPages()}");
-            debugInfo.AppendLine($"Zoom faktor: {zoomFactor:F2}");
-            debugInfo.AppendLine($"Počet hledaných výrazů: {searchTerms.Count}");
-            debugInfo.AppendLine($"Hledané výrazy: {string.Join(", ", searchTerms)}");
-            debugInfo.AppendLine($"Počet zvýraznění: {highlights.Count}");
-            
-            if (pdfViewerDocument != null)
-            {
-                var pageSize = pdfViewerDocument.PageSizes[currentPageIndex];
-                debugInfo.AppendLine($"Velikost stránky (PdfiumViewer): {pageSize.Width:F1} x {pageSize.Height:F1}");
-            }
-            
-            var page = pdfDocument.GetPage(currentPageIndex + 1);
-            var pdfPageSize = page.GetPageSize();
-            debugInfo.AppendLine($"Velikost stránky (iText7): {pdfPageSize.GetWidth():F1} x {pdfPageSize.GetHeight():F1}");
 
-            // Pro rychlou diagnostiku ukážeme i začátek extrahovaného textu stránky.
-            var strategy = new SimpleTextExtractionStrategy();
-            var pageText = PdfTextExtractor.GetTextFromPage(page, strategy);
-            debugInfo.AppendLine($"Délka extrahovaného textu: {pageText.Length} znaků");
-            debugInfo.AppendLine($"Začátek textu: {pageText.Substring(0, Math.Min(100, pageText.Length)).Replace("\n", "\\n")}");
-            
-            // Show debug info
-            MessageBox.Show(debugInfo.ToString(), "Debug informace", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            
-            // Also write to debug output
-            System.Diagnostics.Debug.WriteLine(debugInfo.ToString());
+            if (pdfDocument != null)
+            {
+                debugInfo.AppendLine($"Aktuální stránka: {currentPageIndex + 1} / {pdfDocument.GetNumberOfPages()}");
+                debugInfo.AppendLine($"Zoom faktor: {zoomFactor:F2}");
+                debugInfo.AppendLine($"Počet hledaných výrazů: {searchTerms.Count}");
+                debugInfo.AppendLine($"Hledané výrazy: {string.Join(", ", searchTerms)}");
+                debugInfo.AppendLine($"Počet zvýraznění: {highlights.Count}");
+
+                if (pdfViewerDocument != null)
+                {
+                    var pageSize = pdfViewerDocument.PageSizes[currentPageIndex];
+                    debugInfo.AppendLine($"Velikost stránky (PdfiumViewer): {pageSize.Width:F1} x {pageSize.Height:F1}");
+                }
+
+                var page = pdfDocument.GetPage(currentPageIndex + 1);
+                var pdfPageSize = page.GetPageSize();
+                debugInfo.AppendLine($"Velikost stránky (iText7): {pdfPageSize.GetWidth():F1} x {pdfPageSize.GetHeight():F1}");
+
+                var strategy = new SimpleTextExtractionStrategy();
+                var pageText = PdfTextExtractor.GetTextFromPage(page, strategy);
+                debugInfo.AppendLine($"Délka extrahovaného textu: {pageText.Length} znaků");
+                debugInfo.AppendLine($"Začátek textu: {pageText.Substring(0, Math.Min(100, pageText.Length)).Replace("\n", "\\n")}");
+            }
+
+            AppLogger.Log(debugInfo.ToString());
+
+            var logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "debug.log");
+            if (System.IO.File.Exists(logPath))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(logPath) { UseShellExecute = true });
         }
 
         // Přepne zobrazení na předchozí stránku a znovu vykreslí PDF i stav navigačních tlačítek.
@@ -194,7 +206,7 @@ namespace PdfHighlighter
         {
             zoomFactor = trackZoom.Value / 100.0f;
             RenderCurrentPage();
-            lblStatus.Text = $"Zoom: {trackZoom.Value}%";
+            SetStatusMessage($"Zoom: {trackZoom.Value}%");
         }
 
         // Umožní spustit hledání klávesou Enter přímo z pole pro zadání hledaného textu.

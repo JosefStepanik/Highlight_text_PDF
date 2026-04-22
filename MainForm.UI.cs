@@ -72,7 +72,7 @@ namespace PdfHighlighter
             };
             mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 136)); // Toolbar
             mainPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));  // PDF viewer
-            mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));  // Status bar
+            mainPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));          // Status bar
 
             // Toolbar
             var toolbar = CreateToolbar();
@@ -99,6 +99,7 @@ namespace PdfHighlighter
                 Padding = new Padding(12, 10, 12, 10)
             };
 
+            toolbar.Font = new Font("Segoe UI", 11F, FontStyle.Regular);
             var toolbarLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -422,20 +423,77 @@ namespace PdfHighlighter
             var statusPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                BackColor = GLEBlue
+                BackColor = GLEBlue,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(0, 30)
             };
+
+            var statusLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                CellBorderStyle = TableLayoutPanelCellBorderStyle.None
+            };
+            statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));  // Pozitivní zpráva
+            statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));  // Chyby
 
             lblStatus = new Label
             {
                 Text = "Připraven. Vyberte PDF soubor pro začátek.",
                 Dock = DockStyle.Fill,
+                AutoSize = false,
                 TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(10, 0, 0, 0),
+                Padding = new Padding(10, 4, 4, 4),
                 ForeColor = GLEText
             };
+            statusLayout.Controls.Add(lblStatus, 0, 0);
 
-            statusPanel.Controls.Add(lblStatus);
+            lblStatusErrors = new Label
+            {
+                Text = string.Empty,
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(4, 4, 10, 4),
+                ForeColor = Color.Red
+            };
+            statusLayout.Controls.Add(lblStatusErrors, 1, 0);
+
+            statusPanel.Controls.Add(statusLayout);
+
+            // Přizpůsobení výšky status baru obsahu
+            statusLayout.Layout += (s, e) =>
+            {
+                // Zvětší řádek na výšku nejvyššího labelu
+                int maxHeight = Math.Max(
+                    MeasureLabelHeight(lblStatus, statusLayout.ColumnStyles[0].Width > 0
+                        ? (int)(statusLayout.ClientSize.Width * 0.55f) - 14 : 300),
+                    MeasureLabelHeight(lblStatusErrors, statusLayout.ColumnStyles[1].Width > 0
+                        ? (int)(statusLayout.ClientSize.Width * 0.45f) - 14 : 200)
+                );
+                int rowHeight = Math.Max(30, maxHeight + 8);
+                if (statusLayout.RowStyles.Count == 0)
+                    statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, rowHeight));
+                else
+                    statusLayout.RowStyles[0] = new RowStyle(SizeType.Absolute, rowHeight);
+            };
+
             return statusPanel;
+        }
+
+        private static int MeasureLabelHeight(Label lbl, int availableWidth)
+        {
+            if (string.IsNullOrEmpty(lbl.Text) || availableWidth <= 0)
+                return 0;
+            using var g = lbl.CreateGraphics();
+            var size = g.MeasureString(lbl.Text, lbl.Font,
+                new SizeF(availableWidth, float.MaxValue),
+                StringFormat.GenericDefault);
+            return (int)Math.Ceiling(size.Height);
         }
     }
 }

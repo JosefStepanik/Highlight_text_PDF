@@ -22,7 +22,7 @@ if exist "publish" rmdir /s /q publish
 
 REM Publish self-contained
 echo Publishing standalone application...
-dotnet publish Highlight_text.sln -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o publish
+dotnet publish PdfHighlighter.csproj -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o publish
 
 if %errorlevel% neq 0 (
     echo ERROR: Publish failed!

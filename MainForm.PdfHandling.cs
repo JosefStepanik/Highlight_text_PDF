@@ -50,7 +50,7 @@ namespace PdfHighlighter
                     UpdatePageInfo();
                     RenderCurrentPage();
 
-                    lblStatus.Text = $"Načten PDF: {System.IO.Path.GetFileName(filePath)} ({pdfDocument.GetNumberOfPages()} stránek)";
+                    SetStatusMessage($"Načten PDF: {System.IO.Path.GetFileName(filePath)} ({pdfDocument.GetNumberOfPages()} stránek)");
                 }
                 else
                 {
@@ -62,7 +62,7 @@ namespace PdfHighlighter
             {
                 MessageBox.Show($"Chyba při načítání PDF souboru:\n{ex.Message}", 
                               "Chyba", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                lblStatus.Text = "Chyba při načítání PDF souboru.";
+                SetStatusMessage("Chyba při načítání PDF souboru.", true);
             }
         }
 
@@ -95,7 +95,7 @@ namespace PdfHighlighter
             }
             catch (Exception ex)
             {
-                lblStatus.Text = $"Chyba při renderování stránky: {ex.Message}";
+                SetStatusMessage($"Chyba při renderování stránky: {ex.Message}", true);
             }
         }
 

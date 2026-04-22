@@ -12,6 +12,7 @@
 *.userprefs
 
 # Build results
+temp_build_output/
 [Pp]ublish/
 [Dd]ebug/
 [Dd]ebugPublic/

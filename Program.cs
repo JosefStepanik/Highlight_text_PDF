@@ -14,9 +14,18 @@ namespace PdfHighlighter
             // Povolení vizuálních stylů Windows
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+
+            AppLogger.Initialize();
             
             // Spuštění hlavní formy
-            Application.Run(new MainForm());
+            try
+            {
+                Application.Run(new MainForm());
+            }
+            finally
+            {
+                AppLogger.Shutdown();
+            }
         }
     }
 }
