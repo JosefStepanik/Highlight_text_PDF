@@ -15,6 +15,8 @@ namespace PdfHighlighter
     // ===== Geometry & Coordinate Conversion - Konverze souřadnic a geometrie =====
     public partial class MainForm : Form
     {
+        // Převede PDF obdelník (v PDF bodech, počátek vlevo dole) na obrazovkový obdelník (pixely, počátek vlevo nahoře).
+        // Měřítko odvòdí z aktuální velikosti renderované bitmapy (= stejné jako renderer PDF).
         private RectangleF ConvertPdfCoordsToScreen(iText.Kernel.Geom.Rectangle pdfRect,
             iText.Kernel.Geom.Rectangle pdfPageSize)
         {
@@ -42,6 +44,7 @@ namespace PdfHighlighter
             return new RectangleF(x, y, width, height);
         }
 
+        // Rozšíří obdelník o padding na všech stranách a oříne ho na hranice renderované bitmapy.
         private RectangleF ExpandAndClampScreenRect(RectangleF rect, float padding)
         {
             // Mírné zvětšení zlepšuje čitelnost highlightu a zároveň držíme hranice obrázku.

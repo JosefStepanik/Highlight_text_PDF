@@ -17,6 +17,8 @@ namespace PdfHighlighter
         private static StreamWriter? writer;
         private static string logPath = string.Empty;
 
+        // Vytvoří (nebo vynuluje) log soubor v adresáři aplikace a otevře StreamWriter pro zápis.
+        // Volat jednou při spuštění aplikace.
         public static void Initialize()
         {
             lock (Sync)
@@ -35,6 +37,7 @@ namespace PdfHighlighter
             }
         }
 
+        // Uzavře StreamWriter a uvolní zdroje. Volat jednou při ukončení aplikace.
         public static void Shutdown()
         {
             lock (Sync)
@@ -48,6 +51,7 @@ namespace PdfHighlighter
             }
         }
 
+        // Zapíše řádek s časovou značkou do log souboru. Thread-safe pomocí zámku.
         public static void Log(string message)
         {
             lock (Sync)

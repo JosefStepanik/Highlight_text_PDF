@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
@@ -18,19 +19,111 @@ namespace PdfHighlighter
     // ===== Event Handlers & Keyboard Shortcuts - Obsluha UI zdarosti a klávesových zkratek =====
     public partial class MainForm : Form
     {
+        // Zobrazí zprávu ve stavovém řádku a volitelně ji obarví červeno-růžovou barvou (pro chyby/upozornění).
+        // Také aplikuje zelenou barvu na vybrané termy v textu.
         private void SetStatusMessage(string text, bool emphasizeAsWarningOrError = false)
         {
             lblStatus.Text = text;
-            lblStatus.ForeColor = emphasizeAsWarningOrError ? Color.IndianRed : GLEText;
+            var baseColor = emphasizeAsWarningOrError ? Color.IndianRed : GLEText;
+            ApplyStatusTermColoring(baseColor);
             lblStatusErrors.Text = string.Empty;
         }
 
+        // Zobrazí stavový text a chybový text do dvou oddělených panelů stavového řádku.
+        // Chybový text se zobrazuje červeně vpravo, stavový text normálně vlevo.
         private void SetStatusWithErrors(string statusText, string errorText)
         {
             lblStatus.Text = statusText;
-            lblStatus.ForeColor = GLEText;
+            ApplyStatusTermColoring(GLEText);
             lblStatusErrors.Text = errorText;
             lblStatusErrors.ForeColor = Color.Red;
+        }
+
+        private void ApplyStatusTermColoring(Color defaultColor)
+        {
+            if (lblStatus.TextLength == 0)
+                return;
+
+            lblStatus.SelectAll();
+            lblStatus.SelectionColor = defaultColor;
+
+            var selectedTerms = selectedHighlightTerms.ToList();
+
+            foreach (var term in selectedTerms)
+            {
+                bool enforceTokenBoundaries = term.All(char.IsLetterOrDigit);
+                int startIndex = 0;
+                while (startIndex < lblStatus.TextLength)
+                {
+                    int matchIndex = lblStatus.Text.IndexOf(term, startIndex, StringComparison.OrdinalIgnoreCase);
+                    if (matchIndex < 0)
+                        break;
+
+                    bool isWholeToken = !enforceTokenBoundaries
+                                        || (IsStatusBoundaryChar(lblStatus.Text, matchIndex - 1)
+                                            && IsStatusBoundaryChar(lblStatus.Text, matchIndex + term.Length));
+
+                    if (!isWholeToken)
+                    {
+                        startIndex = matchIndex + Math.Max(1, term.Length);
+                        continue;
+                    }
+
+                    lblStatus.Select(matchIndex, term.Length);
+                    lblStatus.SelectionColor = HighlightGreen;
+                    startIndex = matchIndex + term.Length;
+                }
+            }
+
+            // Obarvi (vybráno: X) sufixy - ty mají zelené číslo pokud X > 0
+            int searchFrom = 0;
+            const string vybrano = "(vybráno: ";
+            while (searchFrom < lblStatus.TextLength)
+            {
+                int idx = lblStatus.Text.IndexOf(vybrano, searchFrom, StringComparison.Ordinal);
+                if (idx < 0) break;
+                int closeIdx = lblStatus.Text.IndexOf(')', idx + vybrano.Length);
+                if (closeIdx < 0) break;
+
+                // Zjistíme číslo uvnitř závorek
+                string numStr = lblStatus.Text.Substring(idx + vybrano.Length, closeIdx - idx - vybrano.Length);
+                bool isNonZero = int.TryParse(numStr.Trim(), out int num) && num > 0;
+
+                if (isNonZero)
+                {
+                    lblStatus.Select(idx, closeIdx - idx + 1);
+                    lblStatus.SelectionColor = HighlightGreen;
+                }
+
+                searchFrom = closeIdx + 1;
+            }
+
+            lblStatus.DeselectAll();
+        }
+
+        // Přebuduje množinu selectedHighlightIndices z množiny selectedHighlightTerms a aktuálního seznamu highlightTerms.
+        // Volá se po každé změně výběru nebo po změně stránky, kde může být jiná sada highlightů.
+        private void SyncSelectedHighlightIndices()
+        {
+            selectedHighlightIndices.Clear();
+
+            for (int i = 0; i < highlightTerms.Count; i++)
+            {
+                if (selectedHighlightTerms.Contains(highlightTerms[i]))
+                {
+                    selectedHighlightIndices.Add(i);
+                }
+            }
+        }
+
+        // Vrátí true, pokud znak na dané pozici v textu je hranice tokenu (nealfanumerický nebo mimo rozsah).
+        // Používá se při obarvení termů ve stavovém řádku, aby nedošlo k obarvení části delšího slova.
+        private static bool IsStatusBoundaryChar(string text, int index)
+        {
+            if (index < 0 || index >= text.Length)
+                return true;
+
+            return !char.IsLetterOrDigit(text[index]);
         }
 
         // Vykreslí všechny highlight obdélníky přes aktuálně zobrazenou stránku PDF.
@@ -42,8 +135,8 @@ namespace PdfHighlighter
             // Samotné vykreslení highlightů nad renderovanou stránkou.
             using var highlightBrush = new SolidBrush(Color.FromArgb(50, Color.Red));
             using var highlightPen = new Pen(Color.Red, 2);
-            using var selectedHighlightBrush = new SolidBrush(Color.FromArgb(95, Color.LightGreen));
-            using var selectedHighlightPen = new Pen(Color.ForestGreen, 2);
+            using var selectedHighlightBrush = new SolidBrush(Color.FromArgb(95, HighlightGreen));
+            using var selectedHighlightPen = new Pen(HighlightGreen, 2);
 
             for (int i = 0; i < highlights.Count; i++)
             {
@@ -76,16 +169,23 @@ namespace PdfHighlighter
             if (clickedHighlightIndex < 0)
                 return;
 
-            if (selectedHighlightIndices.Contains(clickedHighlightIndex))
+            if (clickedHighlightIndex < highlightTerms.Count)
             {
-                selectedHighlightIndices.Remove(clickedHighlightIndex);
-            }
-            else
-            {
-                selectedHighlightIndices.Add(clickedHighlightIndex);
+                string clickedTerm = highlightTerms[clickedHighlightIndex];
+                if (selectedHighlightTerms.Contains(clickedTerm))
+                {
+                    selectedHighlightTerms.Remove(clickedTerm);
+                }
+                else
+                {
+                    selectedHighlightTerms.Add(clickedTerm);
+                }
             }
 
+            SyncSelectedHighlightIndices();
+
             picPdfViewer.Invalidate();
+            ApplySearchSummaryStatus();
         }
 
         // Reakce na tlačítko pro hledání: načte zadané termy, přepočítá highlighty a aktualizuje stavový text.
@@ -95,6 +195,7 @@ namespace PdfHighlighter
                 return;
 
             ParseSearchTerms();
+            RebuildDocumentSearchSummary();
             UpdateHighlights();
         }
 
@@ -122,7 +223,16 @@ namespace PdfHighlighter
         private void ClearHighlights()
         {
             highlights.Clear();
+            highlightTerms.Clear();
             selectedHighlightIndices.Clear();
+            selectedHighlightTerms.Clear();
+            foundTermsByPageSummary.Clear();
+            totalSearchTermsInSummary = 0;
+            missingTermsInSummary.Clear();
+            multipleOccurrenceTermsInSummary.Clear();
+            hasSearchSummary = false;
+            searchStatusText = string.Empty;
+            searchErrorText = string.Empty;
             picPdfViewer.Invalidate();
             SetStatusMessage("Zvýraznění vymazáno.");
         }
@@ -214,7 +324,11 @@ namespace PdfHighlighter
         {
             zoomFactor = trackZoom.Value / 100.0f;
             RenderCurrentPage();
-            SetStatusMessage($"Zoom: {trackZoom.Value}%");
+
+            if (!hasSearchSummary)
+            {
+                SetStatusMessage($"Zoom: {trackZoom.Value}%");
+            }
         }
 
         // Umožní spustit hledání klávesou Enter přímo z pole pro zadání hledaného textu.

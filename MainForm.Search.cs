@@ -21,10 +21,17 @@ namespace PdfHighlighter
     public partial class MainForm : Form
     {
         private const float HorizontalAngleToleranceDeg = 15f;
+        private static readonly bool EnableVerboseSearchLogs = false;
 
         private static void LogDebug(string message)
         {
             AppLogger.Log(message);
+        }
+
+        private static void LogVerboseSearch(string message)
+        {
+            if (EnableVerboseSearchLogs)
+                LogDebug(message);
         }
 
         // Hlavní vstup pro přepočet highlightů na aktuálně zobrazené stránce.
@@ -32,17 +39,13 @@ namespace PdfHighlighter
         private void UpdateHighlights()
         {
             highlights.Clear();
-            selectedHighlightIndices.Clear();
+            highlightTerms.Clear();
 
             if (pdfViewerDocument == null || searchTerms.Count == 0 || currentPageIndex >= pdfViewerDocument.PageCount)
                 return;
 
             try
             {
-                int totalFoundOccurrences = 0;
-                int foundTermsCount = 0;
-                var missingTerms = new List<string>();
-
                 // iText vrací text a geometrii v PDF souřadnicích (body).
                 var page = pdfDocument!.GetPage(currentPageIndex + 1);
                 var pdfPageSize = page.GetPageSize();
@@ -61,16 +64,6 @@ namespace PdfHighlighter
                     
                     // Pro každý výraz najdeme přesné pozice a převedeme je na obrazovku.
                     var realPositions = FindRealTextPositions(page, trimmedTerm, pdfPageSize);
-
-                    if (realPositions.Count > 0)
-                    {
-                        foundTermsCount++;
-                    }
-                    else
-                    {
-                        missingTerms.Add(trimmedTerm);
-                    }
-                    totalFoundOccurrences += realPositions.Count;
                     
                     // DEBUG: Log results
                     LogDebug($"[DEBUG] Nalezeno {realPositions.Count} pozic pro '{trimmedTerm}'");
@@ -78,15 +71,16 @@ namespace PdfHighlighter
                     foreach (var rect in realPositions)
                     {
                         highlights.Add(rect);
+                        highlightTerms.Add(trimmedTerm);
                         // DEBUG: Log rectangle coordinates
                         LogDebug($"[DEBUG] Přidán obdélník: X={rect.X:F1}, Y={rect.Y:F1}, W={rect.Width:F1}, H={rect.Height:F1}");
                     }
                 }
+
+                SyncSelectedHighlightIndices();
                 
                 picPdfViewer.Invalidate(); // Vynutí překreslení nových highlightů.
-
-                var (statusText, errorText) = BuildSearchStatusText(totalFoundOccurrences, foundTermsCount, searchTerms.Count, missingTerms);
-                SetStatusWithErrors(statusText, errorText);
+                ApplySearchSummaryStatus();
             }
             catch (Exception ex)
             {
@@ -96,20 +90,145 @@ namespace PdfHighlighter
             }
         }
 
-        private (string statusText, string errorText) BuildSearchStatusText(int foundOccurrences, int foundTerms, int totalTerms, List<string> missingTerms)
+        // Projídá všechny stránky dokumentu, pro každou hledá všechny termy a sestavuje souhrn:
+        // které termy byly nalezeny na které stránce, které chybí, a které mají více výskytů.
+        // Výsledek uloží do polní *InSummary pro pozdější obnovení stavového textu.
+        private void RebuildDocumentSearchSummary()
         {
-            string occurrencesPart = foundOccurrences == 1
-                ? "Nalezen 1 výskyt"
-                : $"Nalezeno {foundOccurrences} výskytů";
+            hasSearchSummary = false;
+            foundTermsByPageSummary.Clear();
+            totalSearchTermsInSummary = 0;
+            missingTermsInSummary.Clear();
+            multipleOccurrenceTermsInSummary.Clear();
+            searchStatusText = string.Empty;
+            searchErrorText = string.Empty;
 
-            // Sestavit seznam nalezených výrazů
-            var foundTermsList = searchTerms.Where(t => !missingTerms.Contains(t.Trim(), StringComparer.OrdinalIgnoreCase)).ToList();
-            string foundList = foundTermsList.Count > 0 ? string.Join(", ", foundTermsList) : "žádné";
+            if (pdfDocument == null || searchTerms.Count == 0)
+                return;
 
-            string statusText = $"{occurrencesPart} na této stránce ({foundTerms}/{totalTerms}): {foundList}";
-            string errorText = missingTerms.Count == 0 ? string.Empty : $"Nenalezeno: {string.Join(", ", missingTerms)}";
+            var normalizedTerms = searchTerms
+                .Select(term => term.Trim())
+                .Where(term => !string.IsNullOrWhiteSpace(term))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            return (statusText, errorText);
+            if (normalizedTerms.Count == 0)
+                return;
+
+            selectedHighlightTerms.IntersectWith(normalizedTerms);
+
+            var foundTermsByPage = new List<(int pageNumber, List<string> terms)>();
+            var foundInDocument = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var occurrenceCountsByTerm = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            for (int pageIndex = 0; pageIndex < pdfDocument.GetNumberOfPages(); pageIndex++)
+            {
+                var page = pdfDocument.GetPage(pageIndex + 1);
+                var pdfPageSize = page.GetPageSize();
+                var foundOnPage = new List<string>();
+
+                foreach (var term in normalizedTerms)
+                {
+                    var realPositions = FindRealTextPositions(page, term, pdfPageSize);
+                    if (realPositions.Count == 0)
+                        continue;
+
+                    foundOnPage.Add(term);
+                    foundInDocument.Add(term);
+
+                    if (!occurrenceCountsByTerm.TryGetValue(term, out int currentCount))
+                        currentCount = 0;
+
+                    occurrenceCountsByTerm[term] = currentCount + realPositions.Count;
+                }
+
+                if (foundOnPage.Count > 0)
+                {
+                    foundTermsByPage.Add((pageIndex + 1, foundOnPage));
+                }
+            }
+
+            var missingTerms = normalizedTerms
+                .Where(term => !foundInDocument.Contains(term))
+                .ToList();
+
+            var multipleOccurrenceTerms = normalizedTerms
+                .Where(term => occurrenceCountsByTerm.TryGetValue(term, out int count) && count > 1)
+                .Select(term => (term, count: occurrenceCountsByTerm[term]))
+                .ToList();
+
+            var (statusText, errorText) = BuildDocumentSearchStatusText(
+                foundTermsByPage,
+                normalizedTerms.Count,
+                missingTerms,
+                multipleOccurrenceTerms);
+            foundTermsByPageSummary = foundTermsByPage;
+            totalSearchTermsInSummary = normalizedTerms.Count;
+            missingTermsInSummary = missingTerms;
+            multipleOccurrenceTermsInSummary = multipleOccurrenceTerms;
+            searchStatusText = statusText;
+            searchErrorText = errorText;
+            hasSearchSummary = true;
+        }
+
+        // Sestavuje stavový text "Nalezené výskyty na straně X..." a varovný text pro chybějící/opakující termy.
+        // Ke každé stránce přidává sufíf "(vybráno: X)" s počtem zelenvě označených termů.
+        private (string statusText, string errorText) BuildDocumentSearchStatusText(
+            List<(int pageNumber, List<string> terms)> foundTermsByPage,
+            int totalTerms,
+            List<string> missingTerms,
+            List<(string term, int count)> multipleOccurrenceTerms)
+        {
+            var warningParts = new List<string>();
+
+            if (missingTerms.Count > 0)
+            {
+                warningParts.Add($"Nenalezeno v celém dokumentu ({missingTerms.Count}/{totalTerms}): {string.Join(", ", missingTerms)}");
+            }
+
+            if (multipleOccurrenceTerms.Count > 0)
+            {
+                var multipleSummary = string.Join(
+                    ", ",
+                    multipleOccurrenceTerms.Select(item => $"{item.term} ({item.count}x)"));
+                warningParts.Add($"Více výskytů v dokumentu: {multipleSummary}");
+            }
+
+            string warningText = warningParts.Count == 0 ? string.Empty : string.Join(" | ", warningParts);
+
+            if (foundTermsByPage.Count == 0)
+            {
+                string noMatchesText = $"Nalezené výskyty v dokumentu (0/{totalTerms}): žádné";
+                return (noMatchesText, warningText);
+            }
+
+            var pageLines = new List<string>();
+            for (int i = 0; i < foundTermsByPage.Count; i++)
+            {
+                var pageSummary = foundTermsByPage[i];
+                string prefix = i == 0 ? "Nalezené výskyty na straně" : "na straně";
+                int greenTermsCount = pageSummary.terms.Count(term => selectedHighlightTerms.Contains(term));
+                pageLines.Add(
+                    $"{prefix} {pageSummary.pageNumber} ({pageSummary.terms.Count}/{totalTerms}): {string.Join(", ", pageSummary.terms)} (vybráno: {greenTermsCount})");
+            }
+
+            return (string.Join(Environment.NewLine, pageLines), warningText);
+        }
+
+        // Znovu sestavuje a zobrazuje stavový text ze uložených souhrnných dat.
+        // Volá se po každé změně výběru (kliknutí na highlight), aby se aktualizovaly počty "vybráno: X".
+        private void ApplySearchSummaryStatus()
+        {
+            if (!hasSearchSummary)
+                return;
+
+            var (statusText, errorText) = BuildDocumentSearchStatusText(
+                foundTermsByPageSummary,
+                totalSearchTermsInSummary,
+                missingTermsInSummary,
+                multipleOccurrenceTermsInSummary);
+
+            SetStatusWithErrors(statusText, errorText);
         }
 
         // Vrátí přesné obrazovkové obdélníky pro jeden konkrétní výraz.
@@ -131,10 +250,10 @@ namespace PdfHighlighter
                     return results;
                 
                 // DEBUG: Log extracted text chunks
-                LogDebug($"[DEBUG] Extrahovano {textChunks.Count} text chunků z PDF");
+                LogVerboseSearch($"[DEBUG] Extrahovano {textChunks.Count} text chunků z PDF");
                 foreach (var chunk in textChunks.Take(10)) // Show first 10 for debugging
                 {
-                    LogDebug($"[DEBUG] Chunk: '{chunk.Text}' na pozici ({chunk.Rectangle.GetX():F1}, {chunk.Rectangle.GetY():F1})");
+                    LogVerboseSearch($"[DEBUG] Chunk: '{chunk.Text}' na pozici ({chunk.Rectangle.GetX():F1}, {chunk.Rectangle.GetY():F1})");
                 }
                 
                 bool enforceWordBoundaries = trimmedTerm.All(char.IsLetterOrDigit);
@@ -160,6 +279,17 @@ namespace PdfHighlighter
 
                     LogDebug(
                         $"[ROTATED-FALLBACK] term='{trimmedTerm}', matches={rotatedRects.Count}");
+
+                    // Pokud znakový tok něco vynechá kvůli rekonstrukci linek,
+                    // vrátíme do hry i původní chunk/cross-chunk fallback se stejnými boundary pravidly.
+                    var chunkFallbackRects = FindChunkBasedMatches(textChunks, trimmedTerm, pdfPageSize, enforceWordBoundaries);
+                    foreach (var screenRect in chunkFallbackRects)
+                    {
+                        AddUniqueScreenRect(results, screenRect);
+                    }
+
+                    LogDebug(
+                        $"[CHUNK-FALLBACK] term='{trimmedTerm}', matches={chunkFallbackRects.Count}");
 
                     return results;
                 }
@@ -204,7 +334,7 @@ namespace PdfHighlighter
                     char? leftNeighborChar = GetAdjacentChunkBoundaryChar(textChunks, chunkIndex, searchLeft: true);
                     char? rightNeighborChar = GetAdjacentChunkBoundaryChar(textChunks, chunkIndex, searchLeft: false);
 
-                    LogDebug(
+                    LogVerboseSearch(
                         $"[MATCH-CHECK] term='{trimmedTerm}', mode=single, chunkIndex={chunkIndex}, chunkText='{chunk.Text}', leftNeighbor='{FormatDebugChar(leftNeighborChar)}', rightNeighbor='{FormatDebugChar(rightNeighborChar)}', enforceBoundaries={enforceWordBoundaries}");
 
                     var matches = FindTermMatchesInChunk(
@@ -293,6 +423,7 @@ namespace PdfHighlighter
             return matches;
         }
 
+        // Vrátí true, pokud je znak hranice tokenu (null = konec textu, nebo nealfanumerický).
         private static bool IsBoundaryChar(char? c)
         {
             return !c.HasValue || !char.IsLetterOrDigit(c.Value);
@@ -313,6 +444,7 @@ namespace PdfHighlighter
             return (leftIsLetter && rightIsDigit) || (leftIsDigit && rightIsLetter);
         }
 
+        // Formátuje znak pro debug výstup - nahradí biele znaky čitelnou značkou (<space>, <tab>, atd.).
         private static string FormatDebugChar(char? c)
         {
             if (!c.HasValue)
@@ -328,6 +460,8 @@ namespace PdfHighlighter
             };
         }
 
+        // Hledá nejbližší sousední chunk vlevo nebo vpravo a vrací jeho okrajový znak.
+        // Slouží k určení, zda má chunk na okraji sousedící alfanumerický znak (důležité pro boundary check).
         private static char? GetAdjacentChunkBoundaryChar(List<TextChunk> chunks, int index, bool searchLeft)
         {
             if (index < 0 || index >= chunks.Count)
@@ -364,6 +498,8 @@ namespace PdfHighlighter
             return null;
         }
 
+        // Rekonstruuje řádky textu ze znakové geometrie a hledá term v textu každé řádky.
+        // Horizontální režim: zpracovává pouze znaky, které mají horizontální smer textu.
         private List<RectangleF> FindMatchesByCharacterFlow(
             List<TextChunk> chunks,
             string term,
@@ -392,7 +528,7 @@ namespace PdfHighlighter
                 if (string.IsNullOrEmpty(lineText))
                     continue;
 
-                LogDebug($"[CHAR-LINE] term='{term}', lineIndex={lineIndex}, text='{lineText}'");
+                LogVerboseSearch($"[CHAR-LINE] term='{term}', lineIndex={lineIndex}, text='{lineText}'");
 
                 var matches = FindTermMatchesInChunk(
                     lineText,
@@ -407,6 +543,8 @@ namespace PdfHighlighter
             return results;
         }
 
+        // Analogie FindMatchesByCharacterFlow pro otočený (svisle/šikmo) text.
+        // Pro alfanumerické termy používá lokální sekvenci namísto line-based přístupu.
         private List<RectangleF> FindMatchesByVerticalCharacterFlow(
             List<TextChunk> chunks,
             string term,
@@ -441,7 +579,7 @@ namespace PdfHighlighter
                 if (string.IsNullOrEmpty(lineText))
                     continue;
 
-                LogDebug($"[CHAR-LINE-V] term='{term}', lineIndex={lineIndex}, text='{lineText}'");
+                LogVerboseSearch($"[CHAR-LINE-V] term='{term}', lineIndex={lineIndex}, text='{lineText}'");
 
                 // Směr čtení u otočeného textu není v PDF konzistentní, proto testujeme oba směry.
                 AddMatchesFromTextAndMap(results, term, pageRect, lineText, characterMap, $"char-flow-vertical lineIndex={lineIndex} forward");
@@ -454,6 +592,8 @@ namespace PdfHighlighter
             return results;
         }
 
+        // Hledá sekvence otočených znaků tvořící hledaný term lokálním geometrickým přístupem.
+        // Spouští se pro každý potenciální začátek (shoda prvního znaku termu).
         private void AddLocalVerticalSequenceMatches(
             List<RectangleF> results,
             List<PageCharacter> characters,
@@ -491,6 +631,8 @@ namespace PdfHighlighter
             LogDebug($"[LOCAL-V] term='{term}', starts={starts.Count}, matches={mergedCandidates.Count}");
         }
 
+        // Pokusí se sestavit lokální sekvenci otočených znaků od počátečního znaku.
+        // Vrací kandidnáta s obdelníkem a skóre kvality, nebo null pokud sekvence nesplnila podmínky.
         private LocalVerticalMatchCandidate? TryBuildLocalVerticalMatch(
             List<PageCharacter> allCharacters,
             string normalizedTerm,
@@ -546,6 +688,7 @@ namespace PdfHighlighter
             };
         }
 
+        // Vybere lepšího z dopredného a zpětného kandidáta podle SourceConfidence a pak QualityScore.
         private static LocalVerticalMatchCandidate? SelectPreferredLocalVerticalCandidate(
             LocalVerticalMatchCandidate? forwardCandidate,
             LocalVerticalMatchCandidate? reverseCandidate)
@@ -562,6 +705,7 @@ namespace PdfHighlighter
             return forwardCandidate.QualityScore <= reverseCandidate.QualityScore ? forwardCandidate : reverseCandidate;
         }
 
+        // Spočítá důvěryhodnost sekvence (2 = přímá sousední znaky ze stejného chunku, 1 = stejný chunk, 0 = více chunků).
         private static int ComputeSourceConfidence(List<PageCharacter> sequence)
         {
             if (sequence.Count == 0)
@@ -585,6 +729,7 @@ namespace PdfHighlighter
             return contiguous ? 2 : 1;
         }
 
+        // Slučí dupliktní kandidáty (překrývající se obdelníky) do jedné sady preferovaných výsledků.
         private static List<LocalVerticalMatchCandidate> MergeLocalVerticalCandidates(List<LocalVerticalMatchCandidate> candidates)
         {
             var merged = new List<LocalVerticalMatchCandidate>();
@@ -606,6 +751,7 @@ namespace PdfHighlighter
             return merged;
         }
 
+        // Vrátí true, pokud se dva kandidáti považují za ekvivalentní (překryv >= 72% menšího obdelníku).
         private static bool AreEquivalentLocalCandidates(LocalVerticalMatchCandidate a, LocalVerticalMatchCandidate b)
         {
             var intersection = RectangleF.Intersect(a.ScreenRect, b.ScreenRect);
@@ -621,6 +767,8 @@ namespace PdfHighlighter
             return intersectionArea / minArea >= 0.72f;
         }
 
+        // Pro daný aktuální znak (current) najde nejlepší následující/předchozí znak ve směru otočeného textu.
+        // Hodnotití funkčí skóre: kombinace vzdálenosti po ose, vzdálenosti od normaly a úhlové odchylky.
         private static PageCharacter? FindBestNextVerticalCharacter(
             List<PageCharacter> allCharacters,
             PageCharacter current,
@@ -675,6 +823,8 @@ namespace PdfHighlighter
             return best;
         }
 
+        // Ověří, zda jsou znaky na okraji sekvence odděleny od sousedních alfanumerických znaků.
+        // Kratší tokeny vyžadují striktnější oddelení než delší.
         private static bool HasLocalTokenBoundaries(List<PageCharacter> allCharacters, List<PageCharacter> sequence, bool forward)
         {
             if (sequence.Count == 0)
@@ -721,6 +871,7 @@ namespace PdfHighlighter
             return leftOk && rightOk;
         }
 
+        // Určí, zda je sousední znak oddělen od okraje sekvence (jiný chunk nebo nepřímý soused ve zdroji).
         private static bool IsSeparatedTokenNeighbor(PageCharacter edge, PageCharacter? neighbor, float averageSpan)
         {
             if (neighbor == null)
@@ -745,6 +896,8 @@ namespace PdfHighlighter
             return true;
         }
 
+        // Interní datová třída pro kandidnáty nalezené lokální vertikální sekvencí. Obsahuje skóre kvality
+        // pro porovnání předního/zpětného směru a eliminaci duplicit.
         private sealed class LocalVerticalMatchCandidate
         {
             public RectangleF ScreenRect { get; set; }
@@ -755,6 +908,7 @@ namespace PdfHighlighter
             public int SourceConfidence { get; set; }
         }
 
+        // Ověří, zda znaky v sekvenci pochazíjí ze stejného chunku a ve správném pořadí (kontiguoušní indexy).
         private static bool HasConsistentSourceChunkOrder(List<PageCharacter> sequence, string normalizedTerm)
         {
             if (sequence.Count == 0)
@@ -779,6 +933,8 @@ namespace PdfHighlighter
             return sourceOrderedText.Equals(normalizedTerm, StringComparison.Ordinal);
         }
 
+        // Detekuje, zda mezi dvěma znaky existuje blokkující alfanumerický znak na stejné ose.
+        // Chrání před spojením znaků, které prostřední znak dělí na jiné tokeny.
         private static bool HasBlockingAlignedAlnumCharacter(
             List<PageCharacter> allCharacters,
             PageCharacter from,
@@ -818,6 +974,8 @@ namespace PdfHighlighter
             return false;
         }
 
+        // Najde nejbližší znak podrél osy textu (před nebo za) mimo samotnou sekvenci.
+        // Používá se k ověření, zda za/před tokenem následuje volné místo.
         private static PageCharacter? FindAdjacentCharacterAlongAxis(
             List<PageCharacter> allCharacters,
             PageCharacter edge,
@@ -858,6 +1016,8 @@ namespace PdfHighlighter
             return best;
         }
 
+        // Extrahuje jednotlivé znaky ze všech chunků s jejich pozicí v PDF.
+        // Pokud chunk má geometrii pro všechny znaky, použije ji; jinak odhadně pozici z celkového obdelníku.
         private static List<PageCharacter> BuildPageCharacters(List<TextChunk> chunks, Func<TextChunk, bool> includeChunk)
         {
             var characters = new List<PageCharacter>();
@@ -899,6 +1059,7 @@ namespace PdfHighlighter
             return characters;
         }
 
+        // Seskupí znaky do řádek podle Y souřadnice (s tolerancí). Každá řádka je seřazena zleva doprava.
         private static List<CharacterLine> BuildCharacterLines(List<PageCharacter> characters)
         {
             var orderedChars = characters
@@ -944,6 +1105,8 @@ namespace PdfHighlighter
                 .ToList();
         }
 
+        // Ze znakové řádky sestavuje hledací řetězec a mapu pro zpětné mapování pozíce na PDF obdelník.
+        // Vkládá mezery, když je mezera mezi znaky dostatečně velká.
         private static string BuildLineSearchText(CharacterLine line, out List<PageCharacter?> characterMap)
         {
             characterMap = new List<PageCharacter?>();
@@ -978,6 +1141,8 @@ namespace PdfHighlighter
             return new string(chars.ToArray());
         }
 
+        // Seskupí otočené znaky do "svislých řádek" podle normálové projekce.
+        // Analog fce k BuildCharacterLines, ale pracuje s projekcí místo Y souřadnicí.
         private static List<CharacterLine> BuildVerticalCharacterLines(List<PageCharacter> characters)
         {
             var orderedChars = characters
@@ -1027,6 +1192,7 @@ namespace PdfHighlighter
                 .ToList();
         }
 
+        // Analogie BuildLineSearchText pro otočené řádky. Používá AxisProjection místo X souřadnic.
         private static string BuildVerticalLineSearchText(CharacterLine line, out List<PageCharacter?> characterMap)
         {
             characterMap = new List<PageCharacter?>();
@@ -1062,12 +1228,14 @@ namespace PdfHighlighter
             return new string(chars.ToArray());
         }
 
+        // Vrátí nejmenší absolutní rozdíl dvou úhlů (s ohledem na přechod 180/-180 stupňů).
         private static float SmallestAngleDelta(float aDeg, float bDeg)
         {
             float diff = Math.Abs(NormalizeAngleToMinus180Plus180(aDeg - bDeg));
             return Math.Min(diff, 360f - diff);
         }
 
+        // Spustí hledání termu v daném textu a výsledné shody mapuje zpět na obdelníky přes characterMap.
         private void AddMatchesFromTextAndMap(
             List<RectangleF> results,
             string term,
@@ -1086,6 +1254,7 @@ namespace PdfHighlighter
             AddLineMatchesToResults(results, matches, characterMap, pageRect);
         }
 
+        // Převede seznam nalezených shod (start/délka) + mapu znaků na PDF obdelníky a přidá je do výsledků.
         private void AddLineMatchesToResults(
             List<RectangleF> results,
             List<(int start, int length)> matches,
@@ -1157,7 +1326,7 @@ namespace PdfHighlighter
                         continue;
 
                     bool enforceBoundaries = term.All(char.IsLetterOrDigit);
-                    LogDebug(
+                    LogVerboseSearch(
                         $"[MATCH-CHECK] term='{term}', mode=cross, windowStart={i}, windowEnd={j}, combinedText='{combinedText}', enforceBoundaries={enforceBoundaries}");
 
                     var matches = FindTermMatchesInChunk(
@@ -1181,6 +1350,7 @@ namespace PdfHighlighter
             return results;
         }
 
+        // Vrátí true, pokud je úhel textu blízký horizontále (do HorizontalAngleToleranceDeg stupňů od 0°/180°).
         private static bool IsAngleNearHorizontal(float angleDeg)
         {
             float normalized = NormalizeAngleToMinus180Plus180(angleDeg);
@@ -1188,6 +1358,7 @@ namespace PdfHighlighter
             return distanceToHorizontal <= HorizontalAngleToleranceDeg;
         }
 
+        // Normálizuje úhel na rozsah (-180, +180] stupňů.
         private static float NormalizeAngleToMinus180Plus180(float angleDeg)
         {
             float normalized = angleDeg % 360f;
@@ -1419,7 +1590,10 @@ namespace PdfHighlighter
                 float height = 20;
                 
                 highlights.Add(new RectangleF(x, y, width, height));
+                highlightTerms.Add(term);
             }
+
+            SyncSelectedHighlightIndices();
             
             picPdfViewer.Invalidate();
         }
@@ -1436,6 +1610,8 @@ namespace PdfHighlighter
             public float AngleDeg { get; set; }
         }
 
+        // Jeden znak ze stránky PDF s jeho geometrií, úhlem textu a odkaz na zdrojový chunk.
+        // AxisProjection a NormalProjection umòžní práci se značkováním v otočeném souřadnicovém systému.
         private class PageCharacter
         {
             public char Value { get; set; }
@@ -1471,6 +1647,8 @@ namespace PdfHighlighter
             }
         }
 
+        // Skupina znaků seskupených na jednu textovou řádku. Pověl pomůcí vlastnosti průměru
+        // pro snadnou detekci příslušnosti dalšího znaku do této řádky.
         private class CharacterLine
         {
             public List<PageCharacter> Characters { get; } = new List<PageCharacter>();
@@ -1521,7 +1699,7 @@ namespace PdfHighlighter
                         // DEBUG: Log every text chunk (limit output for performance)
                         if (textChunks.Count <= 50) // Only log first 50 chunks
                         {
-                            LogDebug($"[CHUNK] '{text}' -> ({rect.GetX():F1}, {rect.GetY():F1})");
+                            LogVerboseSearch($"[CHUNK] '{text}' -> ({rect.GetX():F1}, {rect.GetY():F1})");
                         }
                     }
                 }

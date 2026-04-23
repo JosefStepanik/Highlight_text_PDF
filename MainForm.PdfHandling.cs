@@ -15,6 +15,7 @@ namespace PdfHighlighter
     // ===== PDF Handling - Načtení a vykreslení PDF =====
     public partial class MainForm : Form
     {
+        // Otevře dialog pro výběr PDF souboru a předá cestu další metodě LoadPdfFile.
         private void BtnSelectPdf_Click(object? sender, EventArgs e)
         {
             using var openFileDialog = new OpenFileDialog
@@ -31,10 +32,22 @@ namespace PdfHighlighter
             }
         }
 
+        // Načte PDF soubor dvěma způsoby: iText7 pro extrakci textu, PdfiumViewer pro renderování.
+        // Před načtením vynuluje veškerý stav výběru a série hledání z předchozího PDF.
         private void LoadPdfFile(string filePath)
         {
             try
             {
+                selectedHighlightIndices.Clear();
+                selectedHighlightTerms.Clear();
+                foundTermsByPageSummary.Clear();
+                totalSearchTermsInSummary = 0;
+                missingTermsInSummary.Clear();
+                multipleOccurrenceTermsInSummary.Clear();
+                hasSearchSummary = false;
+                searchStatusText = string.Empty;
+                searchErrorText = string.Empty;
+
                 // Close previous documents
                 pdfDocument?.Close();
                 pdfViewerDocument?.Dispose();
@@ -74,6 +87,8 @@ namespace PdfHighlighter
             }
         }
 
+        // Vyrenderuje aktuální stránku do bitmapy přes PdfiumViewer se zohledněním aktuálního zoomu,
+        // uloží ji do picPdfViewer a přepočítá highlighty i středové vyřazení obrazu.
         private void RenderCurrentPage()
         {
             if (pdfViewerDocument == null || currentPageIndex >= pdfViewerDocument.PageCount)
@@ -107,6 +122,7 @@ namespace PdfHighlighter
             }
         }
 
+        // Aktualizuje popisek s číslem stránky (např. "Stránka 3 z 10").
         private void UpdatePageInfo()
         {
             if (pdfDocument == null)

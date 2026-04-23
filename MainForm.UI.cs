@@ -26,7 +26,9 @@ namespace PdfHighlighter
         private static readonly Color GLEViewerGray = Color.FromArgb(0x2D, 0x2D, 0x2D);    // #2D2D2D
         private static readonly Color GLEDebugOrange = Color.FromArgb(0xFF, 0x8C, 0x00);   // #FF8C00
         private static readonly Color GLEText = Color.White;
+        private static readonly Color HighlightGreen = Color.FromArgb(0x00, 0xE6, 0x76);  // vivid green #00E676
 
+        // Nastaví primární vizuelní styl (GLE světlemodrou barvu, bílý text, tenký okraj) na tlačítko.
         private void ApplyPrimaryButtonStyle(Button button)
         {
             button.BackColor = GLELightBlue;
@@ -37,6 +39,8 @@ namespace PdfHighlighter
             button.UseVisualStyleBackColor = false;
         }
 
+        // Nastaví tlačítko do aktivního nebo neaktivního vizuelního stavu bez deaktivace (Enabled zůstává true).
+        // Aktivní stav = světlemodrou, neaktivní = tmavě modrou. Stav je uložen v button.Tag pro pozdejší kontrolu.
         private void SetButtonActiveState(Button button, bool isActive)
         {
             button.Enabled = true;
@@ -46,6 +50,7 @@ namespace PdfHighlighter
             button.FlatAppearance.BorderColor = GLEText;
         }
 
+        // Vrátí true, pokud bylo tlačítko před tím označeno jako aktivní přes SetButtonActiveState.
         private bool IsButtonActive(Button button)
         {
             return button.Tag is bool isActive && isActive;
@@ -90,6 +95,7 @@ namespace PdfHighlighter
             this.ResumeLayout(false);
         }
 
+        // Vytvoří hlavní panel nástrojové lišty se dvěma řádky: výběr souboru/navigace nahoře a vyhledávání dole.
         private Panel CreateToolbar()
         {
             var toolbar = new Panel
@@ -310,6 +316,8 @@ namespace PdfHighlighter
             return toolbar;
         }
 
+        // Načte SVG logo z disku a zobrazí ho vpravo v toolbar panelu.
+        // Pokud soubor neexistuje nebo se nepodaří načíst, použije textový fallback.
         private Control CreateLogoControl()
         {
             var logoHost = new Panel
@@ -371,6 +379,8 @@ namespace PdfHighlighter
             return logoHost;
         }
 
+        // Otevře SVG soubor pomocí knihovny Svg a vyrenduje ho do bitmapy se zadanými rozměry.
+        // Vrátí null, pokud otevření nebo renderování selhá.
         private static Image? LoadSvgLogoImage(string svgPath, int maxWidth, int maxHeight)
         {
             try
@@ -386,6 +396,8 @@ namespace PdfHighlighter
             }
         }
 
+        // Vytvoří panel pro zobrazování PDF stránek. Používá ScrollableControl pro posouvání
+        // a PictureBox jako plošku pro renderovanou bitmapu a překryvání highlighťů.
         private Panel CreatePdfViewer()
         {
             var viewerContainer = new Panel
@@ -418,6 +430,8 @@ namespace PdfHighlighter
             return viewerContainer;
         }
 
+        // Vytvoří stavový řádek se dvěma sloupcě: vlevo RichTextBox pro stavové zprávy (s podporou barvení),
+        // vpravo Label pro chybové zprávy. Výška se automaticky přizpůsobuje obsahu.
         private Panel CreateStatusBar()
         {
             var statusPanel = new Panel
@@ -441,15 +455,24 @@ namespace PdfHighlighter
             statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));  // Pozitivní zpráva
             statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));  // Chyby
 
-            lblStatus = new Label
+            lblStatus = new RichTextBox
             {
                 Text = "Připraven. Vyberte PDF soubor pro začátek.",
                 Dock = DockStyle.Fill,
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(10, 4, 4, 4),
-                ForeColor = GLEText
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                BackColor = GLEBlue,
+                ForeColor = GLEText,
+                ScrollBars = RichTextBoxScrollBars.None,
+                DetectUrls = false,
+                Multiline = true,
+                TabStop = false,
+                Margin = new Padding(0),
+                SelectionAlignment = HorizontalAlignment.Left
             };
+            lblStatus.SelectAll();
+            lblStatus.SelectionIndent = 8;
+            lblStatus.DeselectAll();
             statusLayout.Controls.Add(lblStatus, 0, 0);
 
             lblStatusErrors = new Label
@@ -470,7 +493,7 @@ namespace PdfHighlighter
             {
                 // Zvětší řádek na výšku nejvyššího labelu
                 int maxHeight = Math.Max(
-                    MeasureLabelHeight(lblStatus, statusLayout.ColumnStyles[0].Width > 0
+                    MeasureControlTextHeight(lblStatus.Text, lblStatus.Font, statusLayout.ColumnStyles[0].Width > 0
                         ? (int)(statusLayout.ClientSize.Width * 0.55f) - 14 : 300),
                     MeasureLabelHeight(lblStatusErrors, statusLayout.ColumnStyles[1].Width > 0
                         ? (int)(statusLayout.ClientSize.Width * 0.45f) - 14 : 200)
@@ -485,6 +508,7 @@ namespace PdfHighlighter
             return statusPanel;
         }
 
+        // Změří výšku textu v Labelu pro daný dostupný šířku pomocí GDI MeasureString.
         private static int MeasureLabelHeight(Label lbl, int availableWidth)
         {
             if (string.IsNullOrEmpty(lbl.Text) || availableWidth <= 0)
@@ -494,6 +518,17 @@ namespace PdfHighlighter
                 new SizeF(availableWidth, float.MaxValue),
                 StringFormat.GenericDefault);
             return (int)Math.Ceiling(size.Height);
+        }
+
+        // Změří výšku textu pomocí TextRenderer (vhodnější pro RichTextBox a ovládací prvky bez WordWrapu).
+        private static int MeasureControlTextHeight(string text, Font font, int availableWidth)
+        {
+            if (string.IsNullOrEmpty(text) || availableWidth <= 0)
+                return 0;
+
+            var flags = TextFormatFlags.WordBreak | TextFormatFlags.Left;
+            var measured = TextRenderer.MeasureText(text, font, new Size(availableWidth, int.MaxValue), flags);
+            return measured.Height;
         }
     }
 }

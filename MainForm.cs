@@ -23,7 +23,7 @@ namespace PdfHighlighter
         private TextBox txtSearchTerms = null!;
         private Button btnHighlight = null!;
 
-        private Label lblStatus = null!;
+        private RichTextBox lblStatus = null!;
         private Label lblStatusErrors = null!;
         private Button btnPrevPage = null!;
         private Button btnNextPage = null!;
@@ -40,7 +40,16 @@ namespace PdfHighlighter
         private List<string> searchTerms = new List<string>();
         private string? currentPdfPath;
         private List<RectangleF> highlights = new List<RectangleF>();
+        private List<string> highlightTerms = new List<string>();
         private HashSet<int> selectedHighlightIndices = new HashSet<int>();
+        private HashSet<string> selectedHighlightTerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private List<(int pageNumber, List<string> terms)> foundTermsByPageSummary = new List<(int pageNumber, List<string> terms)>();
+        private int totalSearchTermsInSummary;
+        private List<string> missingTermsInSummary = new List<string>();
+        private List<(string term, int count)> multipleOccurrenceTermsInSummary = new List<(string term, int count)>();
+        private string searchStatusText = string.Empty;
+        private string searchErrorText = string.Empty;
+        private bool hasSearchSummary;
 
         // === Konstanty pro vykreslení a hledání ===
         
