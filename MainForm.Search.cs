@@ -21,10 +21,27 @@ namespace PdfHighlighter
     public partial class MainForm : Form
     {
         private const float HorizontalAngleToleranceDeg = 15f;
-        private static readonly bool EnableVerboseSearchLogs = false;
+        private static readonly bool EnableVerboseSearchLogs = GetEnvironmentFlag("PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE");
+        private static readonly bool EnableCoreSearchLogs = GetEnvironmentFlag("PDFHIGHLIGHTER_SEARCH_LOGS") || EnableVerboseSearchLogs;
+
+        private static bool GetEnvironmentFlag(string name)
+        {
+            string? value = Environment.GetEnvironmentVariable(name);
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            value = value.Trim();
+            return value.Equals("1", StringComparison.OrdinalIgnoreCase)
+                   || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+                   || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                   || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+        }
 
         private static void LogDebug(string message)
         {
+            if (!EnableCoreSearchLogs)
+                return;
+
             AppLogger.Log(message);
         }
 
@@ -32,6 +49,13 @@ namespace PdfHighlighter
         {
             if (EnableVerboseSearchLogs)
                 LogDebug(message);
+        }
+
+        private static Action<string>? CreateMatchDetailLogger()
+        {
+            return EnableVerboseSearchLogs
+                ? message => LogDebug($"[MATCH-DETAIL] {message}")
+                : null;
         }
 
         // Hlavní vstup pro přepočet highlightů na aktuálně zobrazené stránce.
@@ -72,8 +96,6 @@ namespace PdfHighlighter
                     {
                         highlights.Add(rect);
                         highlightTerms.Add(trimmedTerm);
-                        // DEBUG: Log rectangle coordinates
-                        LogDebug($"[DEBUG] Přidán obdélník: X={rect.X:F1}, Y={rect.Y:F1}, W={rect.Width:F1}, H={rect.Height:F1}");
                     }
                 }
 
@@ -257,49 +279,14 @@ namespace PdfHighlighter
                 }
                 
                 bool enforceWordBoundaries = trimmedTerm.All(char.IsLetterOrDigit);
+                bool isShortAlnumSearchTerm = IsShortAlnumSearchTerm(trimmedTerm);
+
                 if (enforceWordBoundaries)
-                {
-                    // Přesná tokenová logika pro běžný vodorovný text.
-                    var characterFlowRects = FindMatchesByCharacterFlow(textChunks, trimmedTerm, pdfPageSize, horizontalOnly: true);
-                    foreach (var screenRect in characterFlowRects)
-                    {
-                        AddUniqueScreenRect(results, screenRect);
-                    }
-
-                    LogDebug(
-                        $"[CHAR-FLOW] term='{trimmedTerm}', matches={characterFlowRects.Count}, chunkFallbackUsed={true}");
-
-                    // Fallback pro svislé/natočené texty přes znakový tok.
-                    // Díky tomu i zde hlídáme celé tokeny (R20 != R200).
-                    var rotatedRects = FindMatchesByVerticalCharacterFlow(textChunks, trimmedTerm, pdfPageSize);
-                    foreach (var screenRect in rotatedRects)
-                    {
-                        AddUniqueScreenRect(results, screenRect);
-                    }
-
-                    LogDebug(
-                        $"[ROTATED-FALLBACK] term='{trimmedTerm}', matches={rotatedRects.Count}");
-
-                    // Pokud znakový tok něco vynechá kvůli rekonstrukci linek,
-                    // vrátíme do hry i původní chunk/cross-chunk fallback se stejnými boundary pravidly.
-                    var chunkFallbackRects = FindChunkBasedMatches(textChunks, trimmedTerm, pdfPageSize, enforceWordBoundaries);
-                    foreach (var screenRect in chunkFallbackRects)
-                    {
-                        AddUniqueScreenRect(results, screenRect);
-                    }
-
-                    LogDebug(
-                        $"[CHUNK-FALLBACK] term='{trimmedTerm}', matches={chunkFallbackRects.Count}");
-
-                    return results;
-                }
+                    return FindAlnumTermMatches(textChunks, trimmedTerm, pdfPageSize, isShortAlnumSearchTerm);
 
                 // Primární hledání: najít výraz uvnitř jednotlivých chunků.
                 var chunkBasedRects = FindChunkBasedMatches(textChunks, trimmedTerm, pdfPageSize, enforceWordBoundaries);
-                foreach (var screenRect in chunkBasedRects)
-                {
-                    AddUniqueScreenRect(results, screenRect);
-                }
+                AddUniqueScreenRects(results, chunkBasedRects);
 
                 return results;
 
@@ -314,6 +301,71 @@ namespace PdfHighlighter
             return results;
         }
 
+        private static bool IsShortAlnumSearchTerm(string term)
+        {
+            if (string.IsNullOrWhiteSpace(term))
+                return false;
+
+            var visibleChars = term
+                .Where(ch => !char.IsControl(ch) && ch != '\u200B' && ch != '\uFEFF')
+                .ToList();
+
+            if (visibleChars.Count == 0 || visibleChars.Count > 2)
+                return false;
+
+            return visibleChars.All(char.IsLetterOrDigit);
+        }
+
+        private List<RectangleF> FindAlnumTermMatches(
+            List<TextChunk> textChunks,
+            string trimmedTerm,
+            iText.Kernel.Geom.Rectangle pdfPageSize,
+            bool isShortAlnumSearchTerm)
+        {
+            var results = new List<RectangleF>();
+
+            if (isShortAlnumSearchTerm)
+            {
+                var shortRects = FindMatchesByCharacterFlow(textChunks, trimmedTerm, pdfPageSize, horizontalOnly: true);
+                AddUniqueScreenRects(results, shortRects);
+
+                // U krátkých tokenů zachováme bezpečný režim bez chunk fallbacku,
+                // ale přidáme i svislé/lokální hledání, aby se našly značky typu svislé C2.
+                var shortVerticalRects = FindMatchesByVerticalCharacterFlow(textChunks, trimmedTerm, pdfPageSize);
+                AddUniqueScreenRects(results, shortVerticalRects);
+
+                LogDebug($"[SHORT-CHAR-FLOW] term='{trimmedTerm}', horizontal={shortRects.Count}, vertical={shortVerticalRects.Count}, total={results.Count}");
+                return results;
+            }
+
+            // Přesná tokenová logika pro běžný vodorovný text.
+            var characterFlowRects = FindMatchesByCharacterFlow(textChunks, trimmedTerm, pdfPageSize, horizontalOnly: true);
+            AddUniqueScreenRects(results, characterFlowRects);
+            LogDebug($"[CHAR-FLOW] term='{trimmedTerm}', matches={characterFlowRects.Count}, chunkFallbackUsed={true}");
+
+            // Fallback pro svislé/natočené texty přes znakový tok.
+            // Díky tomu i zde hlídáme celé tokeny (R20 != R200).
+            var rotatedRects = FindMatchesByVerticalCharacterFlow(textChunks, trimmedTerm, pdfPageSize);
+            AddUniqueScreenRects(results, rotatedRects);
+            LogDebug($"[ROTATED-FALLBACK] term='{trimmedTerm}', matches={rotatedRects.Count}");
+
+            // Pokud znakový tok něco vynechá kvůli rekonstrukci linek,
+            // vrátíme do hry i původní chunk/cross-chunk fallback se stejnými boundary pravidly.
+            var chunkFallbackRects = FindChunkBasedMatches(textChunks, trimmedTerm, pdfPageSize, enforceWordBoundaries: true);
+            AddUniqueScreenRects(results, chunkFallbackRects);
+            LogDebug($"[CHUNK-FALLBACK] term='{trimmedTerm}', matches={chunkFallbackRects.Count}");
+
+            return results;
+        }
+
+        private static void AddUniqueScreenRects(List<RectangleF> target, IEnumerable<RectangleF> candidates)
+        {
+            foreach (var candidate in candidates)
+            {
+                AddUniqueScreenRect(target, candidate);
+            }
+        }
+
         private List<RectangleF> FindChunkBasedMatches(
             List<TextChunk> textChunks,
             string trimmedTerm,
@@ -322,6 +374,11 @@ namespace PdfHighlighter
             bool rotatedOnly = false)
         {
             var results = new List<RectangleF>();
+
+            // Krátké alfanumerické tokeny (např. C1) jsou v chunk fallbacku náchylné
+            // na falešné zásahy uvnitř delších značek (C112). V tomto režimu je přeskočíme.
+            if (enforceWordBoundaries && trimmedTerm.Length <= 2)
+                return results;
 
             // Primární hledání: najít výraz uvnitř jednotlivých chunků.
                 for (int chunkIndex = 0; chunkIndex < textChunks.Count; chunkIndex++)
@@ -343,7 +400,7 @@ namespace PdfHighlighter
                         enforceWordBoundaries,
                         leftNeighborChar,
                         rightNeighborChar,
-                        message => LogDebug($"[MATCH-DETAIL] {message}"),
+                        CreateMatchDetailLogger(),
                         $"single chunkIndex={chunkIndex}");
                     if (matches.Count == 0)
                         continue;
@@ -358,10 +415,6 @@ namespace PdfHighlighter
 
                         var screenRect = ExpandAndClampScreenRect(ConvertPdfCoordsToScreen(pdfRect, pdfPageSize), HighlightPaddingPx);
                         AddUniqueScreenRect(results, screenRect);
-
-                        LogDebug($"[DEBUG] NALEZEN! '{trimmedTerm}' v chunku '{chunk.Text}'");
-                        LogDebug($"[DEBUG] PDF pozice: ({pdfRect.GetX():F1}, {pdfRect.GetY():F1}, {pdfRect.GetWidth():F1}, {pdfRect.GetHeight():F1})");
-                        LogDebug($"[DEBUG] Obrazovka pozice: ({screenRect.X:F1}, {screenRect.Y:F1}, {screenRect.Width:F1}, {screenRect.Height:F1})");
                     }
                 }
 
@@ -406,8 +459,22 @@ namespace PdfHighlighter
                     ? rightNeighborChar
                     : text[found + term.Length];
 
-                bool leftBoundaryOk = IsBoundaryChar(leftOuterChar) || IsTokenBoundaryBetween(leftOuterChar, firstMatchedChar);
-                bool rightBoundaryOk = IsBoundaryChar(rightOuterChar) || IsTokenBoundaryBetween(lastMatchedChar, rightOuterChar);
+                bool isVeryShortAlphaNumericTerm = term.Length <= 2 && term.All(char.IsLetterOrDigit);
+
+                bool leftBoundaryOk;
+                bool rightBoundaryOk;
+                if (isVeryShortAlphaNumericTerm)
+                {
+                    // U krátkých tokenů (např. C1) nepovolujeme hranici přes alnum přechody,
+                    // jinak vznikají falešné zásahy uvnitř řetězců jako C99C1 nebo C112.
+                    leftBoundaryOk = IsBoundaryChar(leftOuterChar);
+                    rightBoundaryOk = IsBoundaryChar(rightOuterChar);
+                }
+                else
+                {
+                    leftBoundaryOk = IsBoundaryChar(leftOuterChar) || IsTokenBoundaryBetween(leftOuterChar, firstMatchedChar);
+                    rightBoundaryOk = IsBoundaryChar(rightOuterChar) || IsTokenBoundaryBetween(lastMatchedChar, rightOuterChar);
+                }
 
                 bool boundaryOk = !enforceWordBoundaries || (leftBoundaryOk && rightBoundaryOk);
 
@@ -534,7 +601,7 @@ namespace PdfHighlighter
                     lineText,
                     term,
                     enforceWordBoundaries: true,
-                    debugLog: message => LogDebug($"[MATCH-DETAIL] {message}"),
+                    debugLog: CreateMatchDetailLogger(),
                     debugScope: $"char-flow lineIndex={lineIndex}");
 
                 AddLineMatchesToResults(results, matches, characterMap, pageRect);
@@ -625,7 +692,6 @@ namespace PdfHighlighter
             foreach (var candidate in mergedCandidates)
             {
                 AddUniqueScreenRect(results, candidate.ScreenRect);
-                LogDebug($"[LOCAL-V-MATCH] term='{normalizedTerm}', text='{candidate.SequenceText}', forward={candidate.Forward}, x={candidate.PdfRect.GetX():F1}, y={candidate.PdfRect.GetY():F1}");
             }
 
             LogDebug($"[LOCAL-V] term='{term}', starts={starts.Count}, matches={mergedCandidates.Count}");
@@ -846,7 +912,9 @@ namespace PdfHighlighter
                 {
                     bool shortLeftOk = before == null || !char.IsLetterOrDigit(before.Value);
                     bool shortRightOk = after == null || !char.IsLetterOrDigit(after.Value);
-                    return shortLeftOk && shortRightOk;
+                    bool sourceLeftOk = !HasAdjacentSourceAlnumOutsideSequence(allCharacters, sequence, first, direction: -1);
+                    bool sourceRightOk = !HasAdjacentSourceAlnumOutsideSequence(allCharacters, sequence, last, direction: +1);
+                    return shortLeftOk && shortRightOk && sourceLeftOk && sourceRightOk;
                 }
 
                 // U delších značek typu C77 blokujeme pouze těsně navazující alfanumerické sousedy
@@ -869,6 +937,42 @@ namespace PdfHighlighter
                            || IsTokenBoundaryBetween(lastChar, after.Value);
 
             return leftOk && rightOk;
+        }
+
+        // Pro krátké alfanumerické tokeny ověřuje, zda na okraji sekvence
+        // nepokračuje stejný zdrojový chunk dalším alfanumerickým znakem.
+        // Tím zabráníme dílčím zásahům typu C1 uvnitř C112.
+        private static bool HasAdjacentSourceAlnumOutsideSequence(
+            List<PageCharacter> allCharacters,
+            List<PageCharacter> sequence,
+            PageCharacter edge,
+            int direction)
+        {
+            if (edge.SourceChunkIndex < 0 || edge.SourceCharIndex < 0)
+                return false;
+
+            int targetSourceCharIndex = edge.SourceCharIndex + direction;
+            if (targetSourceCharIndex < 0)
+                return false;
+
+            foreach (var candidate in allCharacters)
+            {
+                if (candidate.SourceChunkIndex != edge.SourceChunkIndex)
+                    continue;
+
+                if (candidate.SourceCharIndex != targetSourceCharIndex)
+                    continue;
+
+                if (sequence.Contains(candidate))
+                    continue;
+
+                if (!char.IsLetterOrDigit(candidate.Value))
+                    continue;
+
+                return true;
+            }
+
+            return false;
         }
 
         // Určí, zda je sousední znak oddělen od okraje sekvence (jiný chunk nebo nepřímý soused ve zdroji).
@@ -1092,7 +1196,7 @@ namespace PdfHighlighter
                     lines.Add(bestLine);
                 }
 
-                bestLine.Characters.Add(character);
+                bestLine.AddCharacter(character);
             }
 
             foreach (var line in lines)
@@ -1111,6 +1215,8 @@ namespace PdfHighlighter
         {
             characterMap = new List<PageCharacter?>();
             var chars = new List<char>();
+            float avgWidth = line.AverageWidth;
+            float spacingThreshold = Math.Max(1.0f, avgWidth * 0.5f);
 
             for (int i = 0; i < line.Characters.Count; i++)
             {
@@ -1120,14 +1226,12 @@ namespace PdfHighlighter
                 {
                     var previous = line.Characters[i - 1];
                     float gap = current.Left - previous.Right;
-                    
-                    // Počítáme průměrnou šířku znaků v řádce
-                    float avgWidth = line.Characters.Average(c => c.Width);
-                    
+
                     // Přidáme mezeru, jen pokud je výrazně větší mezera
                     // Nezměňujeme věci, které by měly být spojeny
-                    float spacingThreshold = Math.Max(1.0f, avgWidth * 0.5f);
-                    if (gap > spacingThreshold)
+                    bool shouldInsertSpace = gap > spacingThreshold
+                                             && !AreSourceAdjacentCharacters(previous, current);
+                    if (shouldInsertSpace)
                     {
                         chars.Add(' ');
                         characterMap.Add(null);
@@ -1179,7 +1283,7 @@ namespace PdfHighlighter
                     lines.Add(bestLine);
                 }
 
-                bestLine.Characters.Add(character);
+                bestLine.AddCharacter(character);
             }
 
             foreach (var line in lines)
@@ -1197,6 +1301,8 @@ namespace PdfHighlighter
         {
             characterMap = new List<PageCharacter?>();
             var chars = new List<char>();
+            float avgCharSize = line.Characters.Count == 0 ? 0f : line.Characters.Average(c => Math.Max(c.Width, c.Height));
+            float spacingThreshold = Math.Max(0.5f, avgCharSize * 0.3f);
 
             for (int i = 0; i < line.Characters.Count; i++)
             {
@@ -1208,13 +1314,12 @@ namespace PdfHighlighter
                     float centerDistance = Math.Abs(previous.AxisProjection - current.AxisProjection);
                     float previousSpan = Math.Max(previous.Width, previous.Height);
                     float currentSpan = Math.Max(current.Width, current.Height);
-                    
-                    // Použijeme průměrný rozměr znaků na řádce
-                    float avgCharSize = line.Characters.Average(c => Math.Max(c.Width, c.Height));
+
                     float effectiveGap = centerDistance - (previousSpan + currentSpan) * 0.5f;
-                    float spacingThreshold = Math.Max(0.5f, avgCharSize * 0.3f);
                     
-                    if (effectiveGap > spacingThreshold)
+                    bool shouldInsertSpace = effectiveGap > spacingThreshold
+                                             && !AreSourceAdjacentCharacters(previous, current);
+                    if (shouldInsertSpace)
                     {
                         chars.Add(' ');
                         characterMap.Add(null);
@@ -1226,6 +1331,18 @@ namespace PdfHighlighter
             }
 
             return new string(chars.ToArray());
+        }
+
+        // Pokud dva znaky pochází ze stejného chunku a navazují indexem,
+        // nesmíme mezi ně uměle vkládat mezeru jen podle geometrie.
+        private static bool AreSourceAdjacentCharacters(PageCharacter left, PageCharacter right)
+        {
+            return left.SourceChunkIndex >= 0
+                   && right.SourceChunkIndex >= 0
+                   && left.SourceCharIndex >= 0
+                   && right.SourceCharIndex >= 0
+                   && left.SourceChunkIndex == right.SourceChunkIndex
+                   && Math.Abs(left.SourceCharIndex - right.SourceCharIndex) == 1;
         }
 
         // Vrátí nejmenší absolutní rozdíl dvou úhlů (s ohledem na přechod 180/-180 stupňů).
@@ -1248,7 +1365,7 @@ namespace PdfHighlighter
                 lineText,
                 term,
                 enforceWordBoundaries: true,
-                debugLog: message => LogDebug($"[MATCH-DETAIL] {message}"),
+                debugLog: CreateMatchDetailLogger(),
                 debugScope: debugScope);
 
             AddLineMatchesToResults(results, matches, characterMap, pageRect);
@@ -1333,7 +1450,7 @@ namespace PdfHighlighter
                         combinedText,
                         term,
                         enforceBoundaries,
-                        debugLog: message => LogDebug($"[MATCH-DETAIL] {message}"),
+                        debugLog: CreateMatchDetailLogger(),
                         debugScope: $"cross window={i}-{j}");
                     foreach (var match in matches)
                     {
@@ -1548,6 +1665,18 @@ namespace PdfHighlighter
                                && Math.Abs(existing.Height - candidate.Height) < SimilarRectTolerancePx;
                 if (similar)
                     return;
+
+                var intersection = RectangleF.Intersect(existing, candidate);
+                if (intersection.Width > 0 && intersection.Height > 0)
+                {
+                    float intersectionArea = intersection.Width * intersection.Height;
+                    float existingArea = existing.Width * existing.Height;
+                    float candidateArea = candidate.Width * candidate.Height;
+                    float minArea = Math.Min(existingArea, candidateArea);
+
+                    if (minArea > 0 && intersectionArea / minArea >= 0.82f)
+                        return;
+                }
             }
 
             target.Add(candidate);
@@ -1652,11 +1781,27 @@ namespace PdfHighlighter
         private class CharacterLine
         {
             public List<PageCharacter> Characters { get; } = new List<PageCharacter>();
-            public float AverageCenterY => Characters.Count == 0 ? 0f : Characters.Average(c => c.CenterY);
-            public float AverageAngleDeg => Characters.Count == 0 ? 0f : Characters.Average(c => c.AngleDeg);
-            public float AverageNormalProjection => Characters.Count == 0 ? 0f : Characters.Average(c => c.NormalProjection);
-            public float AverageWidth => Characters.Count == 0 ? 0f : Characters.Average(c => c.Width);
-            public float AverageHeight => Characters.Count == 0 ? 0f : Characters.Average(c => c.Height);
+            private float sumCenterY;
+            private float sumAngleDeg;
+            private float sumNormalProjection;
+            private float sumWidth;
+            private float sumHeight;
+
+            public void AddCharacter(PageCharacter character)
+            {
+                Characters.Add(character);
+                sumCenterY += character.CenterY;
+                sumAngleDeg += character.AngleDeg;
+                sumNormalProjection += character.NormalProjection;
+                sumWidth += character.Width;
+                sumHeight += character.Height;
+            }
+
+            public float AverageCenterY => Characters.Count == 0 ? 0f : sumCenterY / Characters.Count;
+            public float AverageAngleDeg => Characters.Count == 0 ? 0f : sumAngleDeg / Characters.Count;
+            public float AverageNormalProjection => Characters.Count == 0 ? 0f : sumNormalProjection / Characters.Count;
+            public float AverageWidth => Characters.Count == 0 ? 0f : sumWidth / Characters.Count;
+            public float AverageHeight => Characters.Count == 0 ? 0f : sumHeight / Characters.Count;
         }
         
         // Listener iText událostí: sbírá text a jeho geometrii během průchodu stránky.

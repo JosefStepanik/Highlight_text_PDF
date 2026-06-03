@@ -15,4 +15,4 @@ if not exist "bin\Release\net8.0-windows\PdfHighlighter.exe" (
 echo Starting PDF Text Highlighter...
 echo.
 
-dotnet run --project PdfHighlighter.csproj --configuration Release
+"bin\Release\net8.0-windows\PdfHighlighter.exe"

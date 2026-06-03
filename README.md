@@ -51,6 +51,42 @@ dotnet build Highlight_text.sln --configuration Debug
 debug_run.bat
 ```
 
+### 6. Debug logování vyhledávání (volitelné)
+Vyhledávací logy lze zapnout bez změny kódu přes environment proměnné:
+
+- `PDFHIGHLIGHTER_SEARCH_LOGS`: zapne základní search logy
+- `PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE`: zapne detailní (verbose) search logy
+
+#### PowerShell (pro aktuální okno)
+```powershell
+$env:PDFHIGHLIGHTER_SEARCH_LOGS = "1"
+./debug_run.bat
+```
+
+```powershell
+$env:PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE = "1"
+./debug_run.bat
+```
+
+Vypnutí proměnných v aktuální PowerShell session:
+```powershell
+Remove-Item Env:PDFHIGHLIGHTER_SEARCH_LOGS -ErrorAction SilentlyContinue
+Remove-Item Env:PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE -ErrorAction SilentlyContinue
+```
+
+#### CMD (pro aktuální okno)
+```cmd
+set PDFHIGHLIGHTER_SEARCH_LOGS=1
+debug_run.bat
+```
+
+```cmd
+set PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE=1
+debug_run.bat
+```
+
+Poznámka: hodnoty `1`, `true`, `yes`, `on` jsou brány jako zapnuto (bez ohledu na velikost písmen).
+
 ## Spuštění aplikace
 
 ### 1. Pomocí batch souboru (doporučeno)
