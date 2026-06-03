@@ -43,6 +43,7 @@ namespace PdfHighlighter
         private List<string> highlightTerms = new List<string>();
         private HashSet<int> selectedHighlightIndices = new HashSet<int>();
         private HashSet<string> selectedHighlightTerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private TableLayoutPanel mainPanel = null!;
         private List<(int pageNumber, List<string> terms)> foundTermsByPageSummary = new List<(int pageNumber, List<string> terms)>();
         private int totalSearchTermsInSummary;
         private List<string> missingTermsInSummary = new List<string>();

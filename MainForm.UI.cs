@@ -69,7 +69,7 @@ namespace PdfHighlighter
             this.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
             // Main layout
-            var mainPanel = new TableLayoutPanel
+            mainPanel = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
@@ -488,24 +488,29 @@ namespace PdfHighlighter
 
             statusPanel.Controls.Add(statusLayout);
 
-            // Přizpůsobení výšky status baru obsahu
-            statusLayout.Layout += (_, _) =>
-            {
-                // Zvětší řádek na výšku nejvyššího labelu
-                int maxHeight = Math.Max(
-                    MeasureControlTextHeight(lblStatus.Text, lblStatus.Font, statusLayout.ColumnStyles[0].Width > 0
-                        ? (int)(statusLayout.ClientSize.Width * 0.55f) - 14 : 300),
-                    MeasureLabelHeight(lblStatusErrors, statusLayout.ColumnStyles[1].Width > 0
-                        ? (int)(statusLayout.ClientSize.Width * 0.45f) - 14 : 200)
-                );
-                int rowHeight = Math.Max(30, maxHeight + 8);
-                if (statusLayout.RowStyles.Count == 0)
-                    statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, rowHeight));
-                else
-                    statusLayout.RowStyles[0] = new RowStyle(SizeType.Absolute, rowHeight);
-            };
+            // Přizpůsobení výšky: RichTextBox hlásí skutečnou výšku obsahu přes ContentsResized.
+            // Tím se spolehlivě přepočítá výška řádku mainPanel, i po přetečení textu na více řádků.
+            lblStatus.ContentsResized += (_, e) => AdjustStatusBarHeight(statusLayout, e.NewRectangle.Height);
+            lblStatusErrors.TextChanged += (_, _) => AdjustStatusBarHeight(statusLayout, lblStatus.Height);
 
             return statusPanel;
+        }
+
+        // Přepočítá výšku řádku statusbaru v mainPanelu podle skutečné výšky obsahu.
+        // Bere maximum z výšky RichTextBoxu a výšky error labelu.
+        private void AdjustStatusBarHeight(TableLayoutPanel statusLayout, int rtbContentHeight)
+        {
+            int errorHeight = MeasureLabelHeight(lblStatusErrors,
+                statusLayout.Width > 0 ? (int)(statusLayout.Width * 0.45f) - 14 : 200);
+            int rowHeight = Math.Max(30, Math.Max(rtbContentHeight, errorHeight) + 10);
+
+            if (statusLayout.RowStyles.Count == 0)
+                statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, rowHeight));
+            else
+                statusLayout.RowStyles[0] = new RowStyle(SizeType.Absolute, rowHeight);
+
+            mainPanel.RowStyles[2] = new RowStyle(SizeType.Absolute, rowHeight);
+            mainPanel.PerformLayout();
         }
 
         // Změří výšku textu v Labelu pro daný dostupný šířku pomocí GDI MeasureString.
@@ -518,17 +523,6 @@ namespace PdfHighlighter
                 new SizeF(availableWidth, float.MaxValue),
                 StringFormat.GenericDefault);
             return (int)Math.Ceiling(size.Height);
-        }
-
-        // Změří výšku textu pomocí TextRenderer (vhodnější pro RichTextBox a ovládací prvky bez WordWrapu).
-        private static int MeasureControlTextHeight(string text, Font font, int availableWidth)
-        {
-            if (string.IsNullOrEmpty(text) || availableWidth <= 0)
-                return 0;
-
-            var flags = TextFormatFlags.WordBreak | TextFormatFlags.Left;
-            var measured = TextRenderer.MeasureText(text, font, new Size(availableWidth, int.MaxValue), flags);
-            return measured.Height;
         }
     }
 }
