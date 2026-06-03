@@ -1,4 +1,9 @@
 @echo off
+REM ==========================================
+REM  run_csharp.bat
+REM  Spustí aplikaci v konfiguraci Release.
+REM  Před spuštěním je nutné sestavit pomocí build_csharp.bat.
+REM ==========================================
 echo ==========================================
 echo   PDF Text Highlighter - Starting...
 echo ==========================================
