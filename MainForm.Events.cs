@@ -194,9 +194,23 @@ namespace PdfHighlighter
             if (!IsButtonActive(btnHighlight))
                 return;
 
-            ParseSearchTerms();
-            RebuildDocumentSearchSummary();
-            UpdateHighlights();
+            // Show overlay and hide the system cursor while computing.
+            try
+            {
+                AppLogger.Log("BtnHighlight_Click: hiding system cursor and showing overlay");
+                CursorOrbitOverlay.HideSystemCursor();
+                CursorOrbitOverlay.ShowOverlay(this.Handle);
+
+                ParseSearchTerms();
+                RebuildDocumentSearchSummary();
+                UpdateHighlights();
+            }
+            finally
+            {
+                AppLogger.Log("BtnHighlight_Click: closing overlay and restoring system cursor");
+                CursorOrbitOverlay.CloseOverlay();
+                CursorOrbitOverlay.ShowSystemCursor();
+            }
         }
 
         // Rozparsuje vstup z textboxu na jednotlivé hledané výrazy oddělené čárkou.
@@ -286,11 +300,9 @@ namespace PdfHighlighter
                 currentPageIndex--;
                 UpdatePageInfo();
                 RenderCurrentPage();
-                UpdateNavigationButtons();
             }
         }
 
-        // Přepne zobrazení na následující stránku a znovu vykreslí PDF i stav navigačních tlačítek.
         private void BtnNextPage_Click(object? sender, EventArgs e)
         {
             if (!IsButtonActive(btnNextPage))
@@ -301,34 +313,18 @@ namespace PdfHighlighter
                 currentPageIndex++;
                 UpdatePageInfo();
                 RenderCurrentPage();
-                UpdateNavigationButtons();
             }
         }
 
-        // Nastaví, zda mají být tlačítka Předchozí a Následující vizuálně aktivní podle aktuální stránky.
-        private void UpdateNavigationButtons()
-        {
-            if (pdfDocument == null)
-            {
-                SetButtonActiveState(btnPrevPage, false);
-                SetButtonActiveState(btnNextPage, false);
-                return;
-            }
-
-            SetButtonActiveState(btnPrevPage, currentPageIndex > 0);
-            SetButtonActiveState(btnNextPage, currentPageIndex < pdfDocument.GetNumberOfPages() - 1);
-        }
-
-        // Po změně zoom slideru přepočítá faktor přiblížení, znovu vyrenderuje stránku a aktualizuje status.
         private void TrackZoom_ValueChanged(object? sender, EventArgs e)
         {
-            zoomFactor = trackZoom.Value / 100.0f;
-            RenderCurrentPage();
-
-            if (!hasSearchSummary)
+            // trackZoom value is percentage (e.g., 100 = 100%)
+            try
             {
-                SetStatusMessage($"Zoom: {trackZoom.Value}%");
+                zoomFactor = trackZoom.Value / 100.0f;
+                RenderCurrentPage();
             }
+            catch { }
         }
 
         // Umožní spustit hledání klávesou Enter přímo z pole pro zadání hledaného textu.
