@@ -1,3 +1,10 @@
+# ===============================================
+# install_dotnet.ps1
+# Automaticky stáhne a nainstaluje .NET 8.0 SDK (LTS) pro Windows x64.
+# Spustit pouze pokud 'dotnet --version' vrací chybu.
+# Vyžaduje administrátorská oprávnění.
+# ===============================================
+
 # Automatická instalace .NET 8.0 SDK (LTS)
 Write-Host "===============================================" -ForegroundColor Green
 Write-Host "  .NET 8.0 SDK Installer (LTS)" -ForegroundColor Green

@@ -1,4 +1,10 @@
 @echo off
+REM ===============================================
+REM  build_csharp.bat
+REM  Sestaví aplikaci v konfiguraci Release.
+REM  Vyžaduje nainstalované .NET 8.0 SDK.
+REM  Výstup: bin\Release\net8.0-windows\PdfHighlighter.exe
+REM ===============================================
 echo ===============================================
 echo   PDF Text Highlighter - C# Build Script
 echo ===============================================

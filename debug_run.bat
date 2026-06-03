@@ -1,4 +1,9 @@
 @echo off
+REM ===============================================
+REM  debug_run.bat
+REM  Sestaví a spustí aplikaci v Debug konfiguraci.
+REM  Debug build obsahuje ladící informace a logy (debug.log).
+REM ===============================================
 echo ===============================================
 echo   PDF Text Highlighter - DEBUG MODE
 echo ===============================================

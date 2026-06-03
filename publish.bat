@@ -1,4 +1,10 @@
 @echo off
+REM =====================================================
+REM  publish.bat
+REM  Vytvoří standalone (self-contained) verzi aplikace pro Windows x64.
+REM  Výsledek nevyžaduje instalaci .NET Runtime na cílovém počítači.
+REM  Výstup: publish\PdfHighlighter.exe (+ závislosti)
+REM =====================================================
 echo =====================================================
 echo   PDF Text Highlighter - Publish Standalone
 echo =====================================================
