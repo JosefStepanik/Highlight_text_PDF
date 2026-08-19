@@ -12,46 +12,58 @@ Moderní aplikace v jazyce C# s Windows Forms pro zvýrazňování textu v PDF s
 
 ## Systémové požadavky
 
-### .NET 8.0 Runtime (Doporučeno)
+### .NET 8.0 Runtime (Doporuceno)
 - **Stáhněte z**: https://dotnet.microsoft.com/download/dotnet/8.0
 - **Typ**: .NET Desktop Runtime 8.0 nebo novější
 - **Platforma**: Windows x64
 
-### Alternativně: Standalone verze
+### Alternativne: Standalone verze
 - Použijte `publish.bat` pro vytvoření samostatné verze
 - Nevyžaduje instalaci .NET Runtime
 - Větší velikost souboru (~70MB)
 
-## Sestavení aplikace
+## Skripty
 
-### 1. Rychlé sestavení (doporučeno)
+Projekt vystaci se 2 batch soubory:
+
+- `run_csharp.bat` - hlavni vyvojovy vstup pro build i spusteni
+- `publish.bat` - vytvoreni standalone balicku pro distribuci
+
+## Sestaveni a spusteni aplikace
+
+### 1. Spusteni aplikace v Release rezimu (doporuceno)
 ```cmd
-build_csharp.bat
+run_csharp.bat
 ```
 
-### 2. Manuální sestavení
+### 2. Spusteni aplikace v Debug rezimu
+```cmd
+run_csharp.bat debug
+```
+
+### 3. Pouhe sestaveni bez spusteni
+```cmd
+run_csharp.bat build
+```
+
+### 4. Pouhe Debug sestaveni
+```cmd
+run_csharp.bat build-debug
+```
+
+### 5. Manualni sestaveni
 ```cmd
 dotnet restore Highlight_text.sln
 dotnet build Highlight_text.sln --configuration Release
 ```
 
-### 3. Vytvoření standalone verze
+### 6. Vytvoreni standalone verze
 ```cmd
 publish.bat
 ```
 Vytvoří samostatný EXE soubor, který nepotřebuje .NET Runtime.
 
-### 4. Vývojářská verze
-```cmd
-dotnet build Highlight_text.sln --configuration Debug
-```
-
-### 5. Spuštění v Debug režimu
-```cmd
-debug_run.bat
-```
-
-### 6. Debug logování vyhledávání (volitelné)
+### 7. Debug logovani vyhledavani (volitelne)
 Vyhledávací logy lze zapnout bez změny kódu přes environment proměnné:
 
 - `PDFHIGHLIGHTER_SEARCH_LOGS`: zapne základní search logy
@@ -60,12 +72,12 @@ Vyhledávací logy lze zapnout bez změny kódu přes environment proměnné:
 #### PowerShell (pro aktuální okno)
 ```powershell
 $env:PDFHIGHLIGHTER_SEARCH_LOGS = "1"
-./debug_run.bat
+./run_csharp.bat debug
 ```
 
 ```powershell
 $env:PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE = "1"
-./debug_run.bat
+./run_csharp.bat debug
 ```
 
 Vypnutí proměnných v aktuální PowerShell session:
@@ -77,36 +89,37 @@ Remove-Item Env:PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE -ErrorAction SilentlyContinue
 #### CMD (pro aktuální okno)
 ```cmd
 set PDFHIGHLIGHTER_SEARCH_LOGS=1
-debug_run.bat
+run_csharp.bat debug
 ```
 
 ```cmd
 set PDFHIGHLIGHTER_SEARCH_LOGS_VERBOSE=1
-debug_run.bat
+run_csharp.bat debug
 ```
 
 Poznámka: hodnoty `1`, `true`, `yes`, `on` jsou brány jako zapnuto (bez ohledu na velikost písmen).
 
 ## Spuštění aplikace
 
-### 1. Pomocí batch souboru (doporučeno)
+### 1. Pomoci batch souboru (doporuceno)
 ```cmd
 run_csharp.bat
 ```
 
-### 2. Přímé spuštění
+### 2. Primy Debug start
+```cmd
+run_csharp.bat debug
+```
+
+### 3. Prime spusteni pres dotnet CLI
 ```cmd
 dotnet run --project PdfHighlighter.csproj --configuration Release
 ```
 
-### 3. Standalone verze
+### 4. Standalone verze
 ```cmd
 publish\PdfHighlighter.exe
 ```
-
-### 4. Z Visual Studio
-- Otevřete `PdfHighlighter.csproj`
-- Stiskněte F5 nebo Ctrl+F5
 
 ## Použití
 
@@ -138,10 +151,8 @@ publish\PdfHighlighter.exe
 ├── MainForm.Geometry.cs    # Převody souřadnic PDF -> obrazovka
 ├── favicon.ico             # Ikona aplikace
 ├── LOGO_1COLOR_SVG.svg     # Logo pro pravou část toolbaru
-├── build_csharp.bat        # Build skript
-├── run_csharp.bat          # Spouštěcí skript
-├── debug_run.bat           # Spuštění v Debug režimu
-├── publish.bat             # Vytvoření standalone verze
+├── run_csharp.bat          # Hlavni build/run skript
+├── publish.bat             # Vytvoreni standalone verze
 ├── bin/                    # Sestavené soubory
 ├── obj/                    # Dočasné build soubory
 ├── publish/                # Standalone verze
@@ -164,7 +175,7 @@ publish\PdfHighlighter.exe
 ### Chyba: "The framework 'Microsoft.WindowsDesktop.App' version '8.0.0' was not found"
 ```cmd
 # Stáhněte a nainstalujte .NET 8.0 Desktop Runtime
-# Nebo použijte standalone verzi:
+# Nebo pouzijte standalone verzi:
 publish.bat
 ```
 

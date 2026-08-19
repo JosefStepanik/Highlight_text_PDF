@@ -16,7 +16,7 @@ try {
     $dotnetVersion = & dotnet --version 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Host ".NET SDK je již nainstalován: verze $dotnetVersion" -ForegroundColor Green
-        Write-Host "Můžete pokračovat s build_csharp.bat" -ForegroundColor Cyan
+        Write-Host "Můžete pokračovat s run_csharp.bat" -ForegroundColor Cyan
         Read-Host "Stiskněte Enter pro pokračování"
         exit 0
     }
@@ -52,7 +52,7 @@ try {
         Write-Host "Pro dokončení instalace:" -ForegroundColor Cyan
         Write-Host "1. Zavřete tento PowerShell" -ForegroundColor White
         Write-Host "2. Otevřete nový PowerShell" -ForegroundColor White
-        Write-Host "3. Spusťte: build_csharp.bat" -ForegroundColor White
+        Write-Host "3. Spusťte: run_csharp.bat" -ForegroundColor White
         
     } else {
         Write-Host "Chyba při instalaci! Exit code: $($process.ExitCode)" -ForegroundColor Red
